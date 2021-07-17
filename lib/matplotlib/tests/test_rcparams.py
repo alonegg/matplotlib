@@ -1,4 +1,3 @@
-from collections import OrderedDict
 import copy
 import os
 from pathlib import Path
@@ -18,6 +17,7 @@ from matplotlib.rcsetup import (
     validate_bool,
     validate_color,
     validate_colorlist,
+    _validate_color_or_linecolor,
     validate_cycler,
     validate_float,
     validate_fontweight,
@@ -225,11 +225,11 @@ def generate_validator_testcases(valid):
                      (('a', 'b'), ['a', 'b']),
                      (iter(['a', 'b']), ['a', 'b']),
                      (np.array(['a', 'b']), ['a', 'b']),
-                     ((1, 2), ['1', '2']),
-                     (np.array([1, 2]), ['1', '2']),
                      ),
          'fail': ((set(), ValueError),
                   (1, ValueError),
+                  ((1, 2), _api.MatplotlibDeprecationWarning),
+                  (np.array([1, 2]), _api.MatplotlibDeprecationWarning),
                   )
          },
         {'validator': _listify_validator(validate_int, n=2),
@@ -329,6 +329,17 @@ def generate_validator_testcases(valid):
                   ('(0, 1, none)', ValueError),  # cannot cast none to float
                   ('(0, 1, "0.5")', ValueError),  # last one not a float
                   ),
+         },
+        {'validator': _validate_color_or_linecolor,
+         'success': (('linecolor', 'linecolor'),
+                     ('markerfacecolor', 'markerfacecolor'),
+                     ('mfc', 'markerfacecolor'),
+                     ('markeredgecolor', 'markeredgecolor'),
+                     ('mec', 'markeredgecolor')
+                     ),
+         'fail': (('line', ValueError),
+                  ('marker', ValueError)
+                  )
          },
         {'validator': validate_hist_bins,
          'success': (('auto', 'auto'),
@@ -460,8 +471,7 @@ def test_rcparams_reset_after_fail():
     with mpl.rc_context(rc={'text.usetex': False}):
         assert mpl.rcParams['text.usetex'] is False
         with pytest.raises(KeyError):
-            with mpl.rc_context(rc=OrderedDict([('text.usetex', True),
-                                                ('test.blah', True)])):
+            with mpl.rc_context(rc={'text.usetex': True, 'test.blah': True}):
                 pass
         assert mpl.rcParams['text.usetex'] is False
 

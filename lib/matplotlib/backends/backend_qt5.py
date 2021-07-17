@@ -11,7 +11,6 @@ from matplotlib.backend_bases import (
     _Backend, FigureCanvasBase, FigureManagerBase, NavigationToolbar2,
     TimerBase, cursors, ToolContainerBase, MouseButton)
 import matplotlib.backends.qt_editor.figureoptions as figureoptions
-from matplotlib.backends.qt_editor._formsubplottool import UiSubplotTool
 from . import qt_compat
 from .qt_compat import (
     QtCore, QtGui, QtWidgets, __version__, QT_API,
@@ -74,13 +73,15 @@ _MODIFIER_KEYS = [
     (QtCore.Qt.ShiftModifier, QtCore.Qt.Key_Shift),
     (QtCore.Qt.MetaModifier, QtCore.Qt.Key_Meta),
 ]
-cursord = {
+cursord = {  # deprecated in Matplotlib 3.5.
     cursors.MOVE: QtCore.Qt.SizeAllCursor,
     cursors.HAND: QtCore.Qt.PointingHandCursor,
     cursors.POINTER: QtCore.Qt.ArrowCursor,
     cursors.SELECT_REGION: QtCore.Qt.CrossCursor,
     cursors.WAIT: QtCore.Qt.WaitCursor,
-    }
+    cursors.RESIZE_HORIZONTAL: QtCore.Qt.SizeHorCursor,
+    cursors.RESIZE_VERTICAL: QtCore.Qt.SizeVerCursor,
+}
 
 
 # make place holder
@@ -124,7 +125,7 @@ def _create_qApp():
 
 def _allow_super_init(__init__):
     """
-    Decorator for ``__init__`` to allow ``super().__init__`` on PyQt4/PySide2.
+    Decorator for ``__init__`` to allow ``super().__init__`` on PySide2.
     """
 
     if QT_API == "PyQt5":
@@ -132,14 +133,14 @@ def _allow_super_init(__init__):
         return __init__
 
     else:
-        # To work around lack of cooperative inheritance in PyQt4, PySide,
-        # and PySide2, when calling FigureCanvasQT.__init__, we temporarily
-        # patch QWidget.__init__ by a cooperative version, that first calls
+        # To work around lack of cooperative inheritance in PySide2, when
+        # calling FigureCanvasQT.__init__, we temporarily patch
+        # QWidget.__init__ by a cooperative version, that first calls
         # QWidget.__init__ with no additional arguments, and then finds the
         # next class in the MRO with an __init__ that does support cooperative
-        # inheritance (i.e., not defined by the PyQt4, PySide, PySide2, sip
-        # or Shiboken packages), and manually call its `__init__`, once again
-        # passing the additional arguments.
+        # inheritance (i.e., not defined by the PySide2, sip or Shiboken
+        # packages), and manually call its `__init__`, once again passing the
+        # additional arguments.
 
         qwidget_init = QtWidgets.QWidget.__init__
 
@@ -149,7 +150,7 @@ def _allow_super_init(__init__):
             next_coop_init = next(
                 cls for cls in mro[mro.index(QtWidgets.QWidget) + 1:]
                 if cls.__module__.split(".")[0] not in [
-                    "PyQt4", "sip", "PySide", "PySide2", "Shiboken"])
+                    "sip", "PySide2", "Shiboken"])
             next_coop_init.__init__(self, *args, **kwargs)
 
         @functools.wraps(__init__)
@@ -293,27 +294,16 @@ class FigureCanvasQT(QtWidgets.QWidget, FigureCanvasBase):
             FigureCanvasBase.button_release_event(self, x, y, button,
                                                   guiEvent=event)
 
-    if QtCore.qVersion() >= "5.":
-        def wheelEvent(self, event):
-            x, y = self.mouseEventCoords(event)
-            # from QWheelEvent::delta doc
-            if event.pixelDelta().x() == 0 and event.pixelDelta().y() == 0:
-                steps = event.angleDelta().y() / 120
-            else:
-                steps = event.pixelDelta().y()
-            if steps:
-                FigureCanvasBase.scroll_event(
-                    self, x, y, steps, guiEvent=event)
-    else:
-        def wheelEvent(self, event):
-            x = event.x()
-            # flipy so y=0 is bottom of canvas
-            y = self.figure.bbox.height - event.y()
-            # from QWheelEvent::delta doc
-            steps = event.delta() / 120
-            if event.orientation() == QtCore.Qt.Vertical:
-                FigureCanvasBase.scroll_event(
-                    self, x, y, steps, guiEvent=event)
+    def wheelEvent(self, event):
+        x, y = self.mouseEventCoords(event)
+        # from QWheelEvent::delta doc
+        if event.pixelDelta().x() == 0 and event.pixelDelta().y() == 0:
+            steps = event.angleDelta().y() / 120
+        else:
+            steps = event.pixelDelta().y()
+        if steps:
+            FigureCanvasBase.scroll_event(
+                self, x, y, steps, guiEvent=event)
 
     def keyPressEvent(self, event):
         key = self._get_key(event)
@@ -617,6 +607,7 @@ class NavigationToolbar2QT(NavigationToolbar2, QtWidgets.QToolBar):
 
         self.coordinates = coordinates
         self._actions = {}  # mapping of toolitem method names to QActions.
+        self._subplot_dialog = None
 
         for text, tooltip_text, image_file, callback in self.toolitems:
             if text is None:
@@ -650,8 +641,7 @@ class NavigationToolbar2QT(NavigationToolbar2, QtWidgets.QToolBar):
         Construct a `.QIcon` from an image file *name*, including the extension
         and relative to Matplotlib's "images" data directory.
         """
-        if QtCore.qVersion() >= '5.':
-            name = name.replace('.png', '_large.png')
+        name = name.replace('.png', '_large.png')
         pm = QtGui.QPixmap(str(cbook._get_data_path('images', name)))
         _setDevicePixelRatio(pm, _devicePixelRatioF(self))
         if self.palette().color(self.backgroundRole()).value() < 128:
@@ -674,6 +664,8 @@ class NavigationToolbar2QT(NavigationToolbar2, QtWidgets.QToolBar):
             titles = [
                 ax.get_label() or
                 ax.get_title() or
+                ax.get_title("left") or
+                ax.get_title("right") or
                 " - ".join(filter(None, [ax.get_xlabel(), ax.get_ylabel()])) or
                 f"<anonymous {type(ax).__name__}>"
                 for ax in axes]
@@ -725,9 +717,10 @@ class NavigationToolbar2QT(NavigationToolbar2, QtWidgets.QToolBar):
 
     def configure_subplots(self):
         image = str(cbook._get_data_path('images/matplotlib.png'))
-        dia = SubplotToolQt(self.canvas.figure, self.canvas.parent())
-        dia.setWindowIcon(QtGui.QIcon(image))
-        dia.exec_()
+        self._subplot_dialog = SubplotToolQt(
+            self.canvas.figure, self.canvas.parent())
+        self._subplot_dialog.setWindowIcon(QtGui.QIcon(image))
+        self._subplot_dialog.show()
 
     def save_figure(self, *args):
         filetypes = self.canvas.get_supported_filetypes_grouped()
@@ -769,46 +762,62 @@ class NavigationToolbar2QT(NavigationToolbar2, QtWidgets.QToolBar):
             self._actions['forward'].setEnabled(can_forward)
 
 
-class SubplotToolQt(UiSubplotTool):
+class SubplotToolQt(QtWidgets.QDialog):
     def __init__(self, targetfig, parent):
-        super().__init__(None)
-
+        super().__init__()
+        self.setObjectName("SubplotTool")
+        self._spinboxes = {}
+        main_layout = QtWidgets.QHBoxLayout()
+        self.setLayout(main_layout)
+        for group, spinboxes, buttons in [
+                ("Borders",
+                 ["top", "bottom", "left", "right"],
+                 [("Export values", self._export_values)]),
+                ("Spacings",
+                 ["hspace", "wspace"],
+                 [("Tight layout", self._tight_layout),
+                  ("Reset", self._reset),
+                  ("Close", self.close)])]:
+            layout = QtWidgets.QVBoxLayout()
+            main_layout.addLayout(layout)
+            box = QtWidgets.QGroupBox(group)
+            layout.addWidget(box)
+            inner = QtWidgets.QFormLayout(box)
+            for name in spinboxes:
+                self._spinboxes[name] = spinbox = QtWidgets.QDoubleSpinBox()
+                spinbox.setValue(getattr(targetfig.subplotpars, name))
+                spinbox.setRange(0, 1)
+                spinbox.setDecimals(3)
+                spinbox.setSingleStep(0.005)
+                spinbox.setKeyboardTracking(False)
+                spinbox.valueChanged.connect(self._on_value_changed)
+                inner.addRow(name, spinbox)
+            layout.addStretch(1)
+            for name, method in buttons:
+                button = QtWidgets.QPushButton(name)
+                # Don't trigger on <enter>, which is used to input values.
+                button.setAutoDefault(False)
+                button.clicked.connect(method)
+                layout.addWidget(button)
+                if name == "Close":
+                    button.setFocus()
         self._figure = targetfig
-
-        for lower, higher in [("bottom", "top"), ("left", "right")]:
-            self._widgets[lower].valueChanged.connect(
-                lambda val: self._widgets[higher].setMinimum(val + .001))
-            self._widgets[higher].valueChanged.connect(
-                lambda val: self._widgets[lower].setMaximum(val - .001))
-
-        self._attrs = ["top", "bottom", "left", "right", "hspace", "wspace"]
-        self._defaults = {attr: vars(self._figure.subplotpars)[attr]
-                          for attr in self._attrs}
-
-        # Set values after setting the range callbacks, but before setting up
-        # the redraw callbacks.
-        self._reset()
-
-        for attr in self._attrs:
-            self._widgets[attr].valueChanged.connect(self._on_value_changed)
-        for action, method in [("Export values", self._export_values),
-                               ("Tight layout", self._tight_layout),
-                               ("Reset", self._reset),
-                               ("Close", self.close)]:
-            self._widgets[action].clicked.connect(method)
+        self._defaults = {spinbox: vars(self._figure.subplotpars)[attr]
+                          for attr, spinbox in self._spinboxes.items()}
+        self._export_values_dialog = None
 
     def _export_values(self):
         # Explicitly round to 3 decimals (which is also the spinbox precision)
         # to avoid numbers of the form 0.100...001.
-        dialog = QtWidgets.QDialog()
+        self._export_values_dialog = QtWidgets.QDialog()
         layout = QtWidgets.QVBoxLayout()
-        dialog.setLayout(layout)
+        self._export_values_dialog.setLayout(layout)
         text = QtWidgets.QPlainTextEdit()
         text.setReadOnly(True)
         layout.addWidget(text)
         text.setPlainText(
-            ",\n".join("{}={:.3}".format(attr, self._widgets[attr].value())
-                       for attr in self._attrs))
+            ",\n".join(f"{attr}={spinbox.value():.3}"
+                       for attr, spinbox in self._spinboxes.items()))
         # Adjust the height of the text widget to fit the whole text, plus
         # some padding.
         size = text.maximumSize()
@@ -816,25 +825,33 @@ class SubplotToolQt(UiSubplotTool):
             QtGui.QFontMetrics(text.document().defaultFont())
             .size(0, text.toPlainText()).height() + 20)
         text.setMaximumSize(size)
-        dialog.exec_()
+        self._export_values_dialog.show()
 
     def _on_value_changed(self):
-        self._figure.subplots_adjust(**{attr: self._widgets[attr].value()
-                                        for attr in self._attrs})
+        spinboxes = self._spinboxes
+        # Set all mins and maxes, so that this can also be used in _reset().
+        for lower, higher in [("bottom", "top"), ("left", "right")]:
+            spinboxes[higher].setMinimum(spinboxes[lower].value() + .001)
+            spinboxes[lower].setMaximum(spinboxes[higher].value() - .001)
+        self._figure.subplots_adjust(
+            **{attr: spinbox.value() for attr, spinbox in spinboxes.items()})
         self._figure.canvas.draw_idle()
 
     def _tight_layout(self):
         self._figure.tight_layout()
-        for attr in self._attrs:
-            widget = self._widgets[attr]
-            widget.blockSignals(True)
-            widget.setValue(vars(self._figure.subplotpars)[attr])
-            widget.blockSignals(False)
+        for attr, spinbox in self._spinboxes.items():
+            spinbox.blockSignals(True)
+            spinbox.setValue(vars(self._figure.subplotpars)[attr])
+            spinbox.blockSignals(False)
         self._figure.canvas.draw_idle()
 
     def _reset(self):
-        for attr, value in self._defaults.items():
-            self._widgets[attr].setValue(value)
+        for spinbox, value in self._defaults.items():
+            spinbox.setRange(0, 1)
+            spinbox.blockSignals(True)
+            spinbox.setValue(value)
+            spinbox.blockSignals(False)
+        self._on_value_changed()
 
 
 class ToolbarQt(ToolContainerBase, QtWidgets.QToolBar):

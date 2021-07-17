@@ -5,6 +5,7 @@ import numpy as np
 from numpy.testing import assert_almost_equal, assert_array_equal
 import pytest
 
+import matplotlib as mpl
 from matplotlib.patches import (Annulus, Patch, Polygon, Rectangle,
                                 FancyArrowPatch)
 from matplotlib.testing.decorators import image_comparison, check_figures_equal
@@ -12,7 +13,7 @@ from matplotlib.transforms import Bbox
 import matplotlib.pyplot as plt
 from matplotlib import (
     collections as mcollections, colors as mcolors, patches as mpatches,
-    path as mpath, style as mstyle, transforms as mtransforms, rcParams)
+    path as mpath, transforms as mtransforms, rcParams)
 
 import sys
 on_win = (sys.platform == 'win32')
@@ -197,7 +198,7 @@ def test_patch_alpha_override():
     ax.set_ylim([-1, 2])
 
 
-@pytest.mark.style('default')
+@mpl.style.context('default')
 def test_patch_color_none():
     # Make sure the alpha kwarg does not override 'none' facecolor.
     # Addresses issue #7478.
@@ -373,6 +374,9 @@ def test_patch_str():
     p = mpatches.PathPatch(path)
     assert str(p) == "PathPatch3((1, 2) ...)"
 
+    p = mpatches.Polygon(np.empty((0, 2)))
+    assert str(p) == "Polygon0()"
+
     data = [[1, 2], [2, 2], [1, 2]]
     p = mpatches.Polygon(data)
     assert str(p) == "Polygon3((1, 2) ...)"
@@ -407,7 +411,7 @@ def test_multi_color_hatch():
     ax.autoscale(False)
 
     for i in range(5):
-        with mstyle.context({'hatch.color': 'C{}'.format(i)}):
+        with mpl.style.context({'hatch.color': 'C{}'.format(i)}):
             r = Rectangle((i - .8 / 2, 5), .8, 1, hatch='//', fc='none')
         ax.add_patch(r)
 
@@ -548,7 +552,37 @@ def test_fancyarrow_units():
     dtime = datetime(2000, 1, 1)
     fig, ax = plt.subplots()
     arrow = FancyArrowPatch((0, dtime), (0.01, dtime))
-    ax.add_patch(arrow)
+
+
+def test_fancyarrow_setdata():
+    fig, ax = plt.subplots()
+    arrow = ax.arrow(0, 0, 10, 10, head_length=5, head_width=1, width=.5)
+    expected1 = np.array(
+      [[13.54, 13.54],
+       [10.35,  9.65],
+       [10.18,  9.82],
+       [0.18, -0.18],
+       [-0.18,  0.18],
+       [9.82, 10.18],
+       [9.65, 10.35],
+       [13.54, 13.54]]
+    )
+    assert np.allclose(expected1, np.round(arrow.verts, 2))
+
+    expected2 = np.array(
+      [[16.71, 16.71],
+       [16.71, 15.29],
+       [16.71, 15.29],
+       [1.71,  0.29],
+       [0.29,  1.71],
+       [15.29, 16.71],
+       [15.29, 16.71],
+       [16.71, 16.71]]
+    )
+    arrow.set_data(
+        x=1, y=1, dx=15, dy=15, width=2, head_width=2, head_length=1
+    )
+    assert np.allclose(expected2, np.round(arrow.verts, 2))
 
 
 @image_comparison(["large_arc.svg"], style="mpl20")

@@ -278,12 +278,10 @@ class ScalarMappable:
         if vmin is not None or vmax is not None:
             self.set_clim(vmin, vmax)
             if norm is not None:
-                _api.warn_deprecated(
-                    "3.3",
-                    message="Passing parameters norm and vmin/vmax "
-                            "simultaneously is deprecated since %(since)s and "
-                            "will become an error %(removal)s. Please pass "
-                            "vmin/vmax directly to the norm when creating it.")
+                raise ValueError(
+                    "Passing parameters norm and vmin/vmax simultaneously is "
+                    "not supported. Please pass vmin/vmax directly to the "
+                    "norm when creating it.")
 
         # always resolve the autoscaling so we have concrete limits
         # rather than deferring to draw time.
@@ -361,16 +359,34 @@ class ScalarMappable:
 
     def set_array(self, A):
         """
-        Set the image array from numpy array *A*.
+        Set the value array from array-like *A*.
 
         Parameters
         ----------
-        A : ndarray or None
+        A : array-like or None
+            The values that are mapped to colors.
+
+            The base class `.ScalarMappable` does not make any assumptions on
+            the dimensionality and shape of the value array *A*.
         """
+        if A is None:
+            self._A = None
+            return
+
+        A = cbook.safe_masked_invalid(A, copy=True)
+        if not np.can_cast(A.dtype, float, "same_kind"):
+            raise TypeError(f"Image data of dtype {A.dtype} cannot be "
+                            "converted to float")
+
         self._A = A
 
     def get_array(self):
-        """Return the data array."""
+        """
+        Return the array of values, that are mapped to colors.
+
+        The base class `.ScalarMappable` does not make any assumptions on
+        the dimensionality and shape of the array.
+        """
         return self._A
 
     def get_cmap(self):

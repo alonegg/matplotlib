@@ -106,7 +106,7 @@ You can add arbitrary paths in Matplotlib using the
 Three-dimensional plotting
 ==========================
 
-The mplot3d toolkit (see :ref:`toolkit_mplot3d-tutorial` and
+The mplot3d toolkit (see :doc:`/tutorials/toolkits/mplot3d` and
 :ref:`mplot3d-examples-index`) has support for simple 3D graphs
 including surface, wireframe, scatter, and bar charts.
 
@@ -147,7 +147,7 @@ streamplot function.
 Ellipses
 ========
 
-In support of the `Phoenix <http://www.jpl.nasa.gov/news/phoenix/main.php>`_
+In support of the `Phoenix <https://www.jpl.nasa.gov/news/phoenix/main.php>`_
 mission to Mars (which used Matplotlib to display ground tracking of
 spacecraft), Michael Droettboom built on work by Charlie Moad to provide
 an extremely accurate 8-spline approximation to elliptical arcs (see
@@ -406,7 +406,7 @@ XKCD-style sketch plots
 =======================
 
 Just for fun, Matplotlib supports plotting in the style of `xkcd
-<https://www.xkcd.com/>`_.
+<https://xkcd.com/>`_.
 
 .. figure:: ../../gallery/showcase/images/sphx_glr_xkcd_001.png
    :target: ../../gallery/showcase/xkcd.html

@@ -77,9 +77,10 @@ example_plot(ax, fontsize=24)
 
 ###############################################################################
 # To prevent this, the location of axes needs to be adjusted. For
-# subplots, this can be done by adjusting the subplot params
-# (:ref:`howto-subplots-adjust`). However, specifying your figure with the
-# ``constrained_layout=True`` kwarg will do the adjusting automatically.
+# subplots, this can be done manually by adjusting the subplot parameters
+# using `.Figure.subplots_adjust`. However, specifying your figure with the
+# # ``constrained_layout=True`` keyword argument will do the adjusting
+# # automatically.
 
 fig, ax = plt.subplots(constrained_layout=True)
 example_plot(ax, fontsize=24)
@@ -112,7 +113,7 @@ for ax in axs.flat:
 #
 # .. note::
 #
-#   For the `~.axes.Axes.pcolormesh` kwargs (``pc_kwargs``) we use a
+#   For the `~.axes.Axes.pcolormesh` keyword arguments (``pc_kwargs``) we use a
 #   dictionary. Below we will assign one colorbar to a number of axes each
 #   containing a `~.cm.ScalarMappable`; specifying the norm and colormap
 #   ensures the colorbar is accurate for all the axes.
@@ -295,8 +296,8 @@ pads = [0, 0.05, 0.1, 0.2]
 for pad, ax in zip(pads, axs.flat):
     pc = ax.pcolormesh(arr, **pc_kwargs)
     fig.colorbar(pc, ax=ax, shrink=0.6, pad=pad)
-    ax.set_xticklabels('')
-    ax.set_yticklabels('')
+    ax.set_xticklabels([])
+    ax.set_yticklabels([])
     ax.set_title(f'pad: {pad}')
 fig.set_constrained_layout_pads(w_pad=2 / 72, h_pad=2 / 72, hspace=0.2,
                                 wspace=0.2)
@@ -555,7 +556,7 @@ fig.suptitle('subplot2grid')
 # has some complexity due to the complex ways we can layout a figure.
 #
 # Layout in Matplotlib is carried out with gridspecs
-# via the `~.GridSpec` class. A gridspec is a logical division of the figure
+# via the `.GridSpec` class. A gridspec is a logical division of the figure
 # into rows and columns, with the relative width of the Axes in those
 # rows and columns set by *width_ratios* and *height_ratios*.
 #

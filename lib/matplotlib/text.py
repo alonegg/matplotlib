@@ -2,7 +2,6 @@
 Classes for including text in a figure.
 """
 
-import contextlib
 import logging
 import math
 import weakref
@@ -20,20 +19,6 @@ from .transforms import (
 
 
 _log = logging.getLogger(__name__)
-
-
-@contextlib.contextmanager
-def _wrap_text(textobj):
-    """Temporarily inserts newlines if the wrap option is enabled."""
-    if textobj.get_wrap():
-        old_text = textobj.get_text()
-        try:
-            textobj.set_text(textobj._get_wrapped_text())
-            yield textobj
-        finally:
-            textobj.set_text(old_text)
-    else:
-        yield textobj
 
 
 # Extracted from Text's method to serve as a function
@@ -103,6 +88,7 @@ def _get_textbox(text, renderer):
     return x_box, y_box, w_box, h_box
 
 
+@docstring.interpd
 @cbook._define_aliases({
     "color": ["c"],
     "fontfamily": ["family"],
@@ -139,6 +125,8 @@ class Text(Artist):
                  usetex=None,          # defaults to rcParams['text.usetex']
                  wrap=False,
                  transform_rotates_text=False,
+                 *,
+                 parse_math=True,
                  **kwargs
                  ):
         """
@@ -146,7 +134,7 @@ class Text(Artist):
 
         Valid keyword arguments are:
 
-        %(Text_kwdoc)s
+        %(Text:kwdoc)s
         """
         super().__init__()
         self._x, self._y = x, y
@@ -156,6 +144,7 @@ class Text(Artist):
             color if color is not None else mpl.rcParams["text.color"])
         self.set_fontproperties(fontproperties)
         self.set_usetex(usetex)
+        self.set_parse_math(parse_math)
         self.set_wrap(wrap)
         self.set_verticalalignment(verticalalignment)
         self.set_horizontalalignment(horizontalalignment)
@@ -172,8 +161,7 @@ class Text(Artist):
 
     def update(self, kwargs):
         # docstring inherited
-        # make a copy so we do not mutate user input!
-        kwargs = dict(kwargs)
+        kwargs = cbook.normalize_kwargs(kwargs, Text)
         sentinel = object()  # bbox can be None, so use another sentinel.
         # Update fontproperties first, as it has lowest priority.
         fontproperties = kwargs.pop("fontproperties", sentinel)
@@ -631,9 +619,12 @@ class Text(Artist):
 
     def _get_wrapped_text(self):
         """
-        Return a copy of the text with new lines added, so that
-        the text is wrapped relative to the parent figure.
+        Return a copy of the text string with new lines added so that the text
+        is wrapped relative to the parent figure (if `get_wrap` is True).
         """
+        if not self.get_wrap():
+            return self.get_text()
+
         # Not fit to handle breaking up latex syntax correctly, so
         # ignore latex for now.
         if self.get_usetex():
@@ -690,14 +681,14 @@ class Text(Artist):
 
         renderer.open_group('text', self.get_gid())
 
-        with _wrap_text(self) as textobj:
-            bbox, info, descent = textobj._get_layout(renderer)
-            trans = textobj.get_transform()
+        with self._cm_set(text=self._get_wrapped_text()):
+            bbox, info, descent = self._get_layout(renderer)
+            trans = self.get_transform()
 
-            # don't use textobj.get_position here, which refers to text
+            # don't use self.get_position here, which refers to text
             # position in Text:
-            posx = float(textobj.convert_xunits(textobj._x))
-            posy = float(textobj.convert_yunits(textobj._y))
+            posx = float(self.convert_xunits(self._x))
+            posy = float(self.convert_yunits(self._y))
             posx, posy = trans.transform((posx, posy))
             if not np.isfinite(posx) or not np.isfinite(posy):
                 _log.warning("posx and posy should be finite values")
@@ -706,41 +697,41 @@ class Text(Artist):
 
             # Update the location and size of the bbox
             # (`.patches.FancyBboxPatch`), and draw it.
-            if textobj._bbox_patch:
+            if self._bbox_patch:
                 self.update_bbox_position_size(renderer)
                 self._bbox_patch.draw(renderer)
 
             gc = renderer.new_gc()
-            gc.set_foreground(textobj.get_color())
-            gc.set_alpha(textobj.get_alpha())
-            gc.set_url(textobj._url)
-            textobj._set_gc_clip(gc)
+            gc.set_foreground(self.get_color())
+            gc.set_alpha(self.get_alpha())
+            gc.set_url(self._url)
+            self._set_gc_clip(gc)
 
-            angle = textobj.get_rotation()
+            angle = self.get_rotation()
 
             for line, wh, x, y in info:
 
-                mtext = textobj if len(info) == 1 else None
+                mtext = self if len(info) == 1 else None
                 x = x + posx
                 y = y + posy
                 if renderer.flipy():
                     y = canvash - y
-                clean_line, ismath = textobj._preprocess_math(line)
+                clean_line, ismath = self._preprocess_math(line)
 
-                if textobj.get_path_effects():
+                if self.get_path_effects():
                     from matplotlib.patheffects import PathEffectRenderer
                     textrenderer = PathEffectRenderer(
-                        textobj.get_path_effects(), renderer)
+                        self.get_path_effects(), renderer)
                 else:
                     textrenderer = renderer
 
-                if textobj.get_usetex():
+                if self.get_usetex():
                     textrenderer.draw_tex(gc, x, y, clean_line,
-                                          textobj._fontproperties, angle,
+                                          self._fontproperties, angle,
                                           mtext=mtext)
                 else:
                     textrenderer.draw_text(gc, x, y, clean_line,
-                                           textobj._fontproperties, angle,
+                                           self._fontproperties, angle,
                                            ismath=ismath, mtext=mtext)
 
         gc.restore()
@@ -899,7 +890,6 @@ class Text(Artist):
             ``self.figure.dpi`` (*not* the renderer dpi); should be set e.g. if
             to match regions with a figure saved with a custom dpi value.
         """
-        #return _unit_box
         if not self.get_visible():
             return Bbox.unit()
         if dpi is None:
@@ -1250,6 +1240,8 @@ class Text(Artist):
             if s == " ":
                 s = r"\ "
             return s, "TeX"
+        elif not self.get_parse_math():
+            return s, False
         elif cbook.is_math_text(s):
             return s, True
         else:
@@ -1287,6 +1279,25 @@ class Text(Artist):
         """Return whether this `Text` object uses TeX for rendering."""
         return self._usetex
 
+    def set_parse_math(self, parse_math):
+        """
+        Override switch to enable/disable any mathtext
+        parsing for the given `Text` object.
+
+        Parameters
+        ----------
+        parse_math : bool
+            Whether to consider mathtext parsing for the string
+        """
+        self._parse_math = bool(parse_math)
+
+    def get_parse_math(self):
+        """
+        Return whether mathtext parsing is considered
+        for this `Text` object.
+        """
+        return self._parse_math
+
     def set_fontname(self, fontname):
         """
         Alias for `set_family`.
@@ -1304,10 +1315,6 @@ class Text(Artist):
 
         """
         return self.set_family(fontname)
-
-
-docstring.interpd.update(Text_kwdoc=artist.kwdoc(Text))
-docstring.dedent_interpd(Text.__init__)
 
 
 class OffsetFrom:

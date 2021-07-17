@@ -32,34 +32,8 @@ to an RGBA tuple (`to_rgba`) or to an HTML-like hex string in the
 "#rrggbb" format (`to_hex`), and a sequence of colors to an (n, 4)
 RGBA array (`to_rgba_array`).  Caching is used for efficiency.
 
-Matplotlib recognizes the following formats to specify a color:
-
-* an RGB or RGBA (red, green, blue, alpha) tuple of float values in closed
-  interval ``[0, 1]`` (e.g., ``(0.1, 0.2, 0.5)`` or ``(0.1, 0.2, 0.5, 0.3)``);
-* a hex RGB or RGBA string (e.g., ``'#0f0f0f'`` or ``'#0f0f0f80'``;
-  case-insensitive);
-* a shorthand hex RGB or RGBA string, equivalent to the hex RGB or RGBA
-  string obtained by duplicating each character, (e.g., ``'#abc'``, equivalent
-  to ``'#aabbcc'``, or ``'#abcd'``, equivalent to ``'#aabbccdd'``;
-  case-insensitive);
-* a string representation of a float value in ``[0, 1]`` inclusive for gray
-  level (e.g., ``'0.5'``);
-* one of the characters ``{'b', 'g', 'r', 'c', 'm', 'y', 'k', 'w'}``, which
-  are short-hand notations for shades of blue, green, red, cyan, magenta,
-  yellow, black, and white. Note that the colors ``'g', 'c', 'm', 'y'`` do not
-  coincide with the X11/CSS4 colors. Their particular shades were chosen for
-  better visibility of colored lines against typical backgrounds.
-* a X11/CSS4 color name (case-insensitive);
-* a name from the `xkcd color survey`_, prefixed with ``'xkcd:'`` (e.g.,
-  ``'xkcd:sky blue'``; case insensitive);
-* one of the Tableau Colors from the 'T10' categorical palette (the default
-  color cycle): ``{'tab:blue', 'tab:orange', 'tab:green', 'tab:red',
-  'tab:purple', 'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan'}``
-  (case-insensitive);
-* a "CN" color spec, i.e. 'C' followed by a number, which is an index into the
-  default property cycle (:rc:`axes.prop_cycle`); the indexing is intended to
-  occur at rendering time, and defaults to black if the cycle does not include
-  color.
+Colors that Matplotlib recognizes are listed at
+:doc:`/tutorials/colors/colors`.
 
 .. _palettable: https://jiffyclub.github.io/palettable/
 .. _xkcd color survey: https://xkcd.com/color/rgb/
@@ -690,6 +664,17 @@ class Colormap:
         cmapobject._global = False
         return cmapobject
 
+    def __eq__(self, other):
+        if (not isinstance(other, Colormap) or self.name != other.name or
+                self.colorbar_extend != other.colorbar_extend):
+            return False
+        # To compare lookup tables the Colormaps have to be initialized
+        if not self._isinit:
+            self._init()
+        if not other._isinit:
+            other._init()
+        return np.array_equal(self._lut, other._lut)
+
     def get_bad(self):
         """Get the color for masked values."""
         if not self._isinit:
@@ -1141,7 +1126,7 @@ class Normalize:
         self.vmin = _sanitize_extrema(vmin)
         self.vmax = _sanitize_extrema(vmax)
         self.clip = clip
-        self._scale = scale.LinearScale(axis=None)
+        self._scale = None  # will default to LinearScale for colorbar
 
     @staticmethod
     def process_value(value):
@@ -1272,7 +1257,7 @@ class TwoSlopeNorm(Normalize):
             Defaults to the min value of the dataset.
         vmax : float, optional
             The data value that defines ``1.0`` in the normalization.
-            Defaults to the the max value of the dataset.
+            Defaults to the max value of the dataset.
 
         Examples
         --------
@@ -1287,9 +1272,8 @@ class TwoSlopeNorm(Normalize):
             array([0., 0.25, 0.5, 0.625, 0.75, 0.875, 1.0])
         """
 
+        super().__init__(vmin=vmin, vmax=vmax)
         self.vcenter = vcenter
-        self.vmin = vmin
-        self.vmax = vmax
         if vcenter is not None and vmax is not None and vcenter >= vmax:
             raise ValueError('vmin, vcenter, and vmax must be in '
                              'ascending order')
@@ -1316,11 +1300,23 @@ class TwoSlopeNorm(Normalize):
 
         if not self.vmin <= self.vcenter <= self.vmax:
             raise ValueError("vmin, vcenter, vmax must increase monotonically")
+        # note that we must extrapolate for tick locators:
         result = np.ma.masked_array(
             np.interp(result, [self.vmin, self.vcenter, self.vmax],
-                      [0, 0.5, 1.]), mask=np.ma.getmask(result))
+                      [0, 0.5, 1], left=-np.inf, right=np.inf),
+            mask=np.ma.getmask(result))
         if is_scalar:
             result = np.atleast_1d(result)[0]
+        return result
+
+    def inverse(self, value):
+        if not self.scaled():
+            raise ValueError("Not invertible until both vmin and vmax are set")
+        (vmin,), _ = self.process_value(self.vmin)
+        (vmax,), _ = self.process_value(self.vmax)
+        (vcenter,), _ = self.process_value(self.vcenter)
+        result = np.interp(value, [0, 0.5, 1], [vmin, vcenter, vmax],
+                           left=-np.inf, right=np.inf)
         return result
 
 
@@ -1358,10 +1354,10 @@ class CenteredNorm(Normalize):
             >>> norm(data)
             array([0.25, 0.5 , 1.  ])
         """
+        super().__init__(vmin=None, vmax=None, clip=clip)
         self._vcenter = vcenter
         # calling the halfrange setter to set vmin and vmax
         self.halfrange = halfrange
-        self.clip = clip
 
     def _set_vmin_vmax(self):
         """
@@ -1382,7 +1378,7 @@ class CenteredNorm(Normalize):
     def autoscale_None(self, A):
         """Set *vmin* and *vmax*."""
         A = np.asanyarray(A)
-        if self.vmax is None and A.size:
+        if self._halfrange is None and A.size:
             self.autoscale(A)
 
     @property
@@ -1506,6 +1502,7 @@ def _make_norm_from_scale(scale_cls, base_norm_cls=None, *, init=None):
     Norm.__name__ = base_norm_cls.__name__
     Norm.__qualname__ = base_norm_cls.__qualname__
     Norm.__module__ = base_norm_cls.__module__
+    Norm.__doc__ = base_norm_cls.__doc__
     Norm.__init__.__signature__ = bound_init_signature.replace(parameters=[
         inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
         *bound_init_signature.parameters.values()])
@@ -1551,11 +1548,11 @@ class LogNorm(Normalize):
 
     def autoscale(self, A):
         # docstring inherited.
-        super().autoscale(np.ma.masked_less_equal(A, 0, copy=False))
+        super().autoscale(np.ma.array(A, mask=(A <= 0)))
 
     def autoscale_None(self, A):
         # docstring inherited.
-        super().autoscale_None(np.ma.masked_less_equal(A, 0, copy=False))
+        super().autoscale_None(np.ma.array(A, mask=(A <= 0)))
 
 
 @_make_norm_from_scale(
@@ -1699,9 +1696,7 @@ class BoundaryNorm(Normalize):
         """
         if clip and extend != 'neither':
             raise ValueError("'clip=True' is not compatible with 'extend'")
-        self.clip = clip
-        self.vmin = boundaries[0]
-        self.vmax = boundaries[-1]
+        super().__init__(vmin=boundaries[0], vmax=boundaries[-1], clip=clip)
         self.boundaries = np.asarray(boundaries)
         self.N = len(self.boundaries)
         if self.N < 2:
@@ -1739,7 +1734,7 @@ class BoundaryNorm(Normalize):
         else:
             max_col = self.Ncmap
         # this gives us the bins in the lookup table in the range
-        # [0, _n_regions - 1]  (the offset is baked in in the init)
+        # [0, _n_regions - 1]  (the offset is set in the init)
         iret = np.digitize(xx, self.boundaries) - 1 + self._offset
         # if we have more colors than regions, stretch the region
         # index computed above to full range of the color bins.  This

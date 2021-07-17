@@ -1,9 +1,9 @@
-from collections import OrderedDict
 import base64
+import codecs
 import datetime
 import gzip
 import hashlib
-from io import BytesIO, StringIO, TextIOWrapper
+from io import BytesIO, StringIO
 import itertools
 import logging
 import os
@@ -14,15 +14,13 @@ import numpy as np
 from PIL import Image
 
 import matplotlib as mpl
-from matplotlib import _api, cbook
+from matplotlib import _api, cbook, font_manager as fm
 from matplotlib.backend_bases import (
      _Backend, _check_savefig_extra_args, FigureCanvasBase, FigureManagerBase,
      RendererBase)
 from matplotlib.backends.backend_mixed import MixedModeRenderer
 from matplotlib.colors import rgb2hex
 from matplotlib.dates import UTC
-from matplotlib.font_manager import findfont, get_font
-from matplotlib.ft2font import LOAD_NO_HINTING
 from matplotlib.mathtext import MathTextParser
 from matplotlib.path import Path
 from matplotlib import _path
@@ -94,6 +92,12 @@ def escape_attrib(s):
     return s
 
 
+def _quote_escape_attrib(s):
+    return ('"' + escape_cdata(s) + '"' if '"' not in s else
+            "'" + escape_cdata(s) + "'" if "'" not in s else
+            '"' + escape_attrib(s) + '"')
+
+
 def short_float_fmt(x):
     """
     Create a short string representation of a float, which is %f
@@ -159,8 +163,8 @@ class XMLWriter:
         for k, v in {**attrib, **extra}.items():
             if v:
                 k = escape_cdata(k)
-                v = escape_attrib(v)
-                self.__write(' %s="%s"' % (k, v))
+                v = _quote_escape_attrib(v)
+                self.__write(' %s=%s' % (k, v))
         self.__open = 1
         return len(self.__tags) - 1
 
@@ -262,15 +266,7 @@ def generate_transform(transform_list=[]):
 
 
 def generate_css(attrib={}):
-    if attrib:
-        output = StringIO()
-        attrib = attrib.items()
-        for k, v in attrib:
-            k = escape_attrib(k)
-            v = escape_attrib(v)
-            output.write("%s:%s;" % (k, v))
-        return output.getvalue()
-    return ''
+    return "; ".join(f"{k}: {v}" for k, v in attrib.items())
 
 
 _capstyle_d = {'projecting': 'square', 'butt': 'butt', 'round': 'round'}
@@ -284,13 +280,18 @@ class RendererSVG(RendererBase):
         self.writer = XMLWriter(svgwriter)
         self.image_dpi = image_dpi  # actual dpi at which we rasterize stuff
 
-        self._groupd = {}
+        if basename is None:
+            basename = getattr(svgwriter, "name", "")
+            if not isinstance(basename, str):
+                basename = ""
         self.basename = basename
+
+        self._groupd = {}
         self._image_counter = itertools.count()
-        self._clipd = OrderedDict()
+        self._clipd = {}
         self._markers = {}
         self._path_collection_id = 0
-        self._hatchd = OrderedDict()
+        self._hatchd = {}
         self._has_gouraud = False
         self._n_gradients = 0
 
@@ -463,8 +464,8 @@ class RendererSVG(RendererBase):
                 .translate(0.0, self.height))
 
     def _get_font(self, prop):
-        fname = findfont(prop)
-        font = get_font(fname)
+        fname = fm.findfont(prop)
+        font = fm.get_font(fname)
         font.clear()
         size = prop.get_size_in_points()
         font.set_size(size, 72.0)
@@ -1107,16 +1108,23 @@ class RendererSVG(RendererBase):
             style['opacity'] = short_float_fmt(alpha)
 
         if not ismath:
-            font = self._get_font(prop)
-            font.set_text(s, 0.0, flags=LOAD_NO_HINTING)
-
             attrib = {}
-            style['font-family'] = str(font.family_name)
-            style['font-weight'] = str(prop.get_weight()).lower()
-            style['font-stretch'] = str(prop.get_stretch()).lower()
-            style['font-style'] = prop.get_style().lower()
-            # Must add "px" to workaround a Firefox bug
-            style['font-size'] = short_float_fmt(prop.get_size()) + 'px'
+
+            font_parts = []
+            if prop.get_style() != 'normal':
+                font_parts.append(prop.get_style())
+            if prop.get_variant() != 'normal':
+                font_parts.append(prop.get_variant())
+            weight = fm.weight_dict[prop.get_weight()]
+            if weight != 400:
+                font_parts.append(f'{weight}')
+            font_parts.extend([
+                f'{short_float_fmt(prop.get_size())}px',
+                f'{prop.get_family()[0]!r}',  # ensure quoting
+            ])
+            style['font'] = ' '.join(font_parts)
+            if prop.get_stretch() != 'normal':
+                style['font-stretch'] = prop.get_stretch()
             attrib['style'] = generate_css(style)
 
             if mtext and (angle == 0 or mtext.get_rotation_mode() == "anchor"):
@@ -1174,13 +1182,24 @@ class RendererSVG(RendererBase):
             writer.start('text')
 
             # Sort the characters by font, and output one tspan for each.
-            spans = OrderedDict()
+            spans = {}
             for font, fontsize, thetext, new_x, new_y in glyphs:
-                style = generate_css({
-                    'font-size': short_float_fmt(fontsize) + 'px',
-                    'font-family': font.family_name,
-                    'font-style': font.style_name.lower(),
-                    'font-weight': font.style_name.lower()})
+                entry = fm.ttfFontProperty(font)
+                font_parts = []
+                if entry.style != 'normal':
+                    font_parts.append(entry.style)
+                if entry.variant != 'normal':
+                    font_parts.append(entry.variant)
+                if entry.weight != 400:
+                    font_parts.append(f'{entry.weight}')
+                font_parts.extend([
+                    f'{short_float_fmt(fontsize)}px',
+                    f'{entry.name!r}',  # ensure quoting
+                ])
+                style = {'font': ' '.join(font_parts)}
+                if entry.stretch != 'normal':
+                    style['font-stretch'] = entry.stretch
+                style = generate_css(style)
                 if thetext == 32:
                     thetext = 0xa0  # non-breaking space
                 spans.setdefault(style, []).append((new_x, -new_y, thetext))
@@ -1263,8 +1282,11 @@ class FigureCanvasSVG(FigureCanvasBase):
 
     fixed_dpi = 72
 
+    @_check_savefig_extra_args
+    @_api.delete_parameter("3.4", "dpi")
     @_api.delete_parameter("3.5", "args")
-    def print_svg(self, filename, *args, **kwargs):
+    def print_svg(self, filename, *args, dpi=None, bbox_inches_restore=None,
+                  metadata=None):
         """
         Parameters
         ----------
@@ -1297,47 +1319,25 @@ class FigureCanvasSVG(FigureCanvasBase):
             __ DC_
         """
         with cbook.open_file_cm(filename, "w", encoding="utf-8") as fh:
-
-            filename = getattr(fh, 'name', '')
-            if not isinstance(filename, str):
-                filename = ''
-
-            if cbook.file_requires_unicode(fh):
-                detach = False
-            else:
-                fh = TextIOWrapper(fh, 'utf-8')
-                detach = True
-
-            self._print_svg(filename, fh, **kwargs)
-
-            # Detach underlying stream from wrapper so that it remains open in
-            # the caller.
-            if detach:
-                fh.detach()
+            if not cbook.file_requires_unicode(fh):
+                fh = codecs.getwriter('utf-8')(fh)
+            if dpi is None:  # always use this branch after deprecation elapses
+                dpi = self.figure.get_dpi()
+            self.figure.set_dpi(72)
+            width, height = self.figure.get_size_inches()
+            w, h = width * 72, height * 72
+            renderer = MixedModeRenderer(
+                self.figure, width, height, dpi,
+                RendererSVG(w, h, fh, image_dpi=dpi, metadata=metadata),
+                bbox_inches_restore=bbox_inches_restore)
+            self.figure.draw(renderer)
+            renderer.finalize()
 
     @_api.delete_parameter("3.5", "args")
     def print_svgz(self, filename, *args, **kwargs):
         with cbook.open_file_cm(filename, "wb") as fh, \
                 gzip.GzipFile(mode='w', fileobj=fh) as gzipwriter:
-            return self.print_svg(gzipwriter)
-
-    @_check_savefig_extra_args
-    @_api.delete_parameter("3.4", "dpi")
-    def _print_svg(self, filename, fh, *, dpi=None, bbox_inches_restore=None,
-                   metadata=None):
-        if dpi is None:  # always use this branch after deprecation elapses.
-            dpi = self.figure.get_dpi()
-        self.figure.set_dpi(72)
-        width, height = self.figure.get_size_inches()
-        w, h = width * 72, height * 72
-
-        renderer = MixedModeRenderer(
-            self.figure, width, height, dpi,
-            RendererSVG(w, h, fh, filename, dpi, metadata=metadata),
-            bbox_inches_restore=bbox_inches_restore)
-
-        self.figure.draw(renderer)
-        renderer.finalize()
+            return self.print_svg(gzipwriter, **kwargs)
 
     def get_default_filetype(self):
         return 'svg'

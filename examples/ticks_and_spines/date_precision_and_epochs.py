@@ -66,7 +66,7 @@ print('After Roundtrip:  ', date2)
 
 #############################################################################
 # If a user wants to use modern dates at microsecond precision, they
-# can change the epoch using `~.set_epoch`.  However, the epoch has to be
+# can change the epoch using `.set_epoch`.  However, the epoch has to be
 # set before any date operations to prevent confusion between different
 # epochs. Trying to change the epoch later will raise a `RuntimeError`.
 
@@ -131,7 +131,7 @@ mdates.set_epoch(new_epoch)
 fig, ax = plt.subplots(constrained_layout=True)
 ax.plot(xold, y)
 ax.set_title('Epoch: ' + mdates.get_epoch())
-plt.setp(ax.xaxis.get_majorticklabels(), rotation=40)
+ax.xaxis.set_tick_params(rotation=40)
 plt.show()
 
 #############################################################################
@@ -140,7 +140,7 @@ plt.show()
 fig, ax = plt.subplots(constrained_layout=True)
 ax.plot(x, y)
 ax.set_title('Epoch: ' + mdates.get_epoch())
-plt.setp(ax.xaxis.get_majorticklabels(), rotation=40)
+ax.xaxis.set_tick_params(rotation=40)
 plt.show()
 
 _reset_epoch_for_tutorial()  # Don't do this.  Just for this tutorial.

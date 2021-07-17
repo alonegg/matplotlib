@@ -338,8 +338,6 @@ def test_contourf_log_extension():
     cb = plt.colorbar(c2, ax=ax2)
     assert cb.ax.get_ylim() == (1e-4, 1e6)
     cb = plt.colorbar(c3, ax=ax3)
-    assert_array_almost_equal(
-        cb.ax.get_ylim(), [3.162277660168379e-05, 3162277.660168383], 2)
 
 
 @image_comparison(['contour_addlines.png'],
@@ -466,3 +464,13 @@ def test_contour_line_start_on_corner_edge():
     cbar = fig.colorbar(filled)
     lines = ax.contour(x, y, z, corner_mask=True, colors='k')
     cbar.add_lines(lines)
+
+
+@mpl.style.context("default")
+def test_contour_autolabel_beyond_powerlimits():
+    ax = plt.figure().add_subplot()
+    cs = plt.contour(np.geomspace(1e-6, 1e-4, 100).reshape(10, 10),
+                     levels=[.25e-5, 1e-5, 4e-5])
+    ax.clabel(cs)
+    # Currently, the exponent is missing, but that may be fixed in the future.
+    assert {text.get_text() for text in ax.texts} == {"0.25", "1.00", "4.00"}

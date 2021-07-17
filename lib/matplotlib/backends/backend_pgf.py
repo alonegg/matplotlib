@@ -122,8 +122,11 @@ def writeln(fh, line):
     fh.write("%\n")
 
 
-def _font_properties_str(prop):
-    # translate font properties to latex commands, return as string
+def _escape_and_apply_props(s, prop):
+    """
+    Generate a TeX string that renders string *s* with font properties *prop*,
+    also applying any required escapes to *s*.
+    """
     commands = []
 
     families = {"serif": r"\rmfamily", "sans": r"\sffamily",
@@ -149,7 +152,7 @@ def _font_properties_str(prop):
         commands.append(r"\bfseries")
 
     commands.append(r"\selectfont")
-    return "".join(commands)
+    return "".join(commands) + " " + common_texification(s)
 
 
 def _metadata_to_str(key, value):
@@ -296,7 +299,10 @@ class LatexManager:
                              "or error in preamble.", stdout)
 
         self.latex = None  # Will be set up on first use.
-        self.str_cache = {}  # cache for strings already processed
+        # Per-instance cache.
+        self._get_box_metrics = functools.lru_cache()(self._get_box_metrics)
+
+    str_cache = _api.deprecated("3.5")(property(lambda self: {}))
 
     def _setup_latex_process(self):
         # Open LaTeX process for real work; register it for deletion.  On
@@ -322,46 +328,34 @@ class LatexManager:
 
     def get_width_height_descent(self, text, prop):
         """
-        Get the width, total height and descent for a text typeset by the
-        current LaTeX environment.
+        Get the width, total height, and descent (in TeX points) for a text
+        typeset by the current LaTeX environment.
         """
+        return self._get_box_metrics(_escape_and_apply_props(text, prop))
 
-        # apply font properties and define textbox
-        prop_cmds = _font_properties_str(prop)
-        textbox = "\\sbox0{%s %s}" % (prop_cmds, text)
-
-        # check cache
-        if textbox in self.str_cache:
-            return self.str_cache[textbox]
-
-        # send textbox to LaTeX and wait for prompt
-        self._stdin_writeln(textbox)
-        try:
-            self._expect_prompt()
-        except LatexError as e:
-            raise ValueError("Error processing '{}'\nLaTeX Output:\n{}"
-                             .format(text, e.latex_output)) from e
-
-        # typeout width, height and text offset of the last textbox
-        self._stdin_writeln(r"\typeout{\the\wd0,\the\ht0,\the\dp0}")
-        # read answer from latex and advance to the next prompt
+    def _get_box_metrics(self, tex):
+        """
+        Get the width, total height and descent (in TeX points) for a TeX
+        command's output in the current LaTeX environment.
+        """
+        # This method gets wrapped in __init__ for per-instance caching.
+        self._stdin_writeln(  # Send textbox to TeX & request metrics typeout.
+            r"\sbox0{%s}\typeout{\the\wd0,\the\ht0,\the\dp0}" % tex)
         try:
             answer = self._expect_prompt()
-        except LatexError as e:
-            raise ValueError("Error processing '{}'\nLaTeX Output:\n{}"
-                             .format(text, e.latex_output)) from e
-
-        # parse metrics from the answer string
+        except LatexError as err:
+            raise ValueError("Error measuring {!r}\nLaTeX Output:\n{}"
+                             .format(tex, err.latex_output)) from err
         try:
-            width, height, offset = answer.splitlines()[0].split(",")
+            # Parse metrics from the answer string.  Last line is prompt, and
+            # next-to-last-line is blank line from \typeout.
+            width, height, offset = answer.splitlines()[-3].split(",")
         except Exception as err:
-            raise ValueError("Error processing '{}'\nLaTeX Output:\n{}"
-                             .format(text, answer)) from err
+            raise ValueError("Error measuring {!r}\nLaTeX Output:\n{}"
+                             .format(tex, answer)) from err
         w, h, o = float(width[:-2]), float(height[:-2]), float(offset[:-2])
-
-        # the height returned from LaTeX goes from base to top.
-        # the height matplotlib expects goes from bottom to top.
-        self.str_cache[textbox] = (w, h + o, o)
+        # The height returned from LaTeX goes from base to top;
+        # the height Matplotlib expects goes from bottom to top.
         return w, h + o, o
 
 
@@ -373,7 +367,7 @@ def _get_image_inclusion_command():
         # Don't mess with backslashes on Windows.
         % cbook._get_data_path("images/matplotlib.png").as_posix())
     try:
-        prompt = man._expect_prompt()
+        man._expect_prompt()
         return r"\includegraphics"
     except LatexError:
         # Discard the broken manager.
@@ -426,8 +420,12 @@ class RendererPgf(RendererBase):
                             fill=rgbFace is not None)
         writeln(self.fh, r"}")
 
+        maxcoord = 16383 / 72.27 * self.dpi  # Max dimensions in LaTeX.
+        clip = (-maxcoord, -maxcoord, maxcoord, maxcoord)
+
         # draw marker for each vertex
-        for point, code in path.iter_segments(trans, simplify=False):
+        for point, code in path.iter_segments(trans, simplify=False,
+                                              clip=clip):
             x, y = point[0] * f, point[1] * f
             writeln(self.fh, r"\begin{pgfscope}")
             writeln(self.fh, r"\pgfsys@transformshift{%fin}{%fin}" % (x, y))
@@ -564,11 +562,13 @@ class RendererPgf(RendererBase):
         f = 1. / self.dpi
         # check for clip box / ignore clip for filled paths
         bbox = gc.get_clip_rectangle() if gc else None
+        maxcoord = 16383 / 72.27 * self.dpi  # Max dimensions in LaTeX.
         if bbox and (rgbFace is None):
             p1, p2 = bbox.get_points()
-            clip = (p1[0], p1[1], p2[0], p2[1])
+            clip = (max(p1[0], -maxcoord), max(p1[1], -maxcoord),
+                    min(p2[0], maxcoord), min(p2[1], maxcoord))
         else:
-            clip = None
+            clip = (-maxcoord, -maxcoord, maxcoord, maxcoord)
         # build path
         for points, code in path.iter_segments(transform, clip=clip):
             if code == Path.MOVETO:
@@ -624,9 +624,9 @@ class RendererPgf(RendererBase):
             return
 
         if not os.path.exists(getattr(self.fh, "name", "")):
-            _api.warn_external(
+            raise ValueError(
                 "streamed pgf-code does not support raster graphics, consider "
-                "using the pgf-to-pdf option.")
+                "using the pgf-to-pdf option")
 
         # save the images to png files
         path = pathlib.Path(self.fh.name)
@@ -665,9 +665,7 @@ class RendererPgf(RendererBase):
         # docstring inherited
 
         # prepare string for tex
-        s = common_texification(s)
-        prop_cmds = _font_properties_str(prop)
-        s = r"%s %s" % (prop_cmds, s)
+        s = _escape_and_apply_props(s, prop)
 
         writeln(self.fh, r"\begin{pgfscope}")
 
@@ -712,10 +710,6 @@ class RendererPgf(RendererBase):
 
     def get_text_width_height_descent(self, s, prop, ismath):
         # docstring inherited
-
-        # check if the math is supposed to be displaystyled
-        s = common_texification(s)
-
         # get text metrics in units of latex pt, convert to display units
         w, h, d = (LatexManager._get_cached_or_new()
                    .get_width_height_descent(s, prop))
@@ -948,6 +942,9 @@ class PdfPages:
             'Creator', 'Producer', 'CreationDate', 'ModDate', and
             'Trapped'. Values have been predefined for 'Creator', 'Producer'
             and 'CreationDate'. They can be removed by setting them to `None`.
+
+            Note that some versions of LaTeX engines may ignore the 'Producer'
+            key and set it to themselves.
         """
         self._output_name = filename
         self._n_figures = 0
@@ -1010,11 +1007,8 @@ class PdfPages:
 
         Parameters
         ----------
-        figure : `.Figure` or int, optional
-            Specifies what figure is saved to file. If not specified, the
-            active figure is saved. If a `.Figure` instance is provided, this
-            figure is saved. If an int is specified, the figure instance to
-            save is looked up by number.
+        figure : `.Figure` or int, default: the active figure
+            The figure, or index of the figure, that is saved to the file.
         """
         if not isinstance(figure, Figure):
             if figure is None:

@@ -10,7 +10,7 @@ import re
 from matplotlib import cbook, cm, colors as mcolors, markers, image as mimage
 from matplotlib.backends.qt_compat import QtGui
 from matplotlib.backends.qt_editor import _formlayout
-
+from matplotlib.dates import DateConverter, num2date
 
 LINESTYLES = {'-': 'Solid',
               '--': 'Dashed',
@@ -33,9 +33,17 @@ def figure_edit(axes, parent=None):
     sep = (None, None)  # separator
 
     # Get / General
-    # Cast to builtin floats as they have nicer reprs.
-    xmin, xmax = map(float, axes.get_xlim())
-    ymin, ymax = map(float, axes.get_ylim())
+    def convert_limits(lim, converter):
+        """Convert axis limits for correct input editors."""
+        if isinstance(converter, DateConverter):
+            return map(num2date, lim)
+        # Cast to builtin floats as they have nicer reprs.
+        return map(float, lim)
+
+    xconverter = axes.xaxis.converter
+    xmin, xmax = convert_limits(axes.get_xlim(), xconverter)
+    yconverter = axes.yaxis.converter
+    ymin, ymax = convert_limits(axes.get_ylim(), yconverter)
     general = [('Title', axes.get_title()),
                sep,
                (None, "<b>X-Axis</b>"),
@@ -54,8 +62,6 @@ def figure_edit(axes, parent=None):
                ]
 
     # Save the unit data
-    xconverter = axes.xaxis.converter
-    yconverter = axes.yaxis.converter
     xunits = axes.xaxis.get_units()
     yunits = axes.yaxis.get_units()
 
@@ -253,10 +259,8 @@ def figure_edit(axes, parent=None):
         if not (axes.get_xlim() == orig_xlim and axes.get_ylim() == orig_ylim):
             figure.canvas.toolbar.push_current()
 
-    data = _formlayout.fedit(
+    _formlayout.fedit(
         datalist, title="Figure options", parent=parent,
         icon=QtGui.QIcon(
             str(cbook._get_data_path('images', 'qt4_editor_options.svg'))),
         apply=apply_callback)
-    if data is not None:
-        apply_callback(data)

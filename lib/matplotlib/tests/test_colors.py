@@ -162,6 +162,29 @@ def test_colormap_copy():
     assert_array_equal(ret1, ret2)
 
 
+def test_colormap_equals():
+    cmap = plt.get_cmap("plasma")
+    cm_copy = cmap.copy()
+    # different object id's
+    assert cm_copy is not cmap
+    # But the same data should be equal
+    assert cm_copy == cmap
+    # Change the copy
+    cm_copy.set_bad('y')
+    assert cm_copy != cmap
+    # Make sure we can compare different sizes without failure
+    cm_copy._lut = cm_copy._lut[:10, :]
+    assert cm_copy != cmap
+    # Test different names are not equal
+    cm_copy = cmap.copy()
+    cm_copy.name = "Test"
+    assert cm_copy != cmap
+    # Test colorbar extends
+    cm_copy = cmap.copy()
+    cm_copy.colorbar_extend = not cmap.colorbar_extend
+    assert cm_copy != cmap
+
+
 def test_colormap_endian():
     """
     GitHub issue #1005: a bug in putmask caused erroneous
@@ -417,6 +440,12 @@ def test_CenteredNorm():
     norm = mcolors.CenteredNorm(vcenter=vcenter)
     norm.autoscale_None([1, 2])
     assert norm.vmax + norm.vmin == 2 * vcenter
+
+    # Check that halfrange can be set without setting vcenter and that it is
+    # not reset through autoscale_None.
+    norm = mcolors.CenteredNorm(halfrange=1.0)
+    norm.autoscale_None([1, 3000])
+    assert norm.halfrange == 1.0
 
     # Check that halfrange input works correctly.
     x = np.random.normal(size=10)
@@ -711,7 +740,7 @@ def test_SymLogNorm_single_zero():
     norm = mcolors.SymLogNorm(1e-5, vmin=-1, vmax=1, base=np.e)
     cbar = mcolorbar.ColorbarBase(fig.add_subplot(), norm=norm)
     ticks = cbar.get_ticks()
-    assert sum(ticks == 0) == 1
+    assert np.count_nonzero(ticks == 0) <= 1
     plt.close(fig)
 
 
@@ -778,7 +807,7 @@ def test_boundarynorm_and_colorbarbase():
     # Default behavior
     norm = mcolors.BoundaryNorm(bounds, cmap.N)
     cb1 = mcolorbar.ColorbarBase(ax1, cmap=cmap, norm=norm, extend='both',
-                                 orientation='horizontal')
+                                 orientation='horizontal', spacing='uniform')
     # New behavior
     norm = mcolors.BoundaryNorm(bounds, cmap.N, extend='both')
     cb2 = mcolorbar.ColorbarBase(ax2, cmap=cmap, norm=norm,
@@ -1377,6 +1406,5 @@ def test_norm_deepcopy():
     norm = mcolors.Normalize()
     norm.vmin = 0.0002
     norm2 = copy.deepcopy(norm)
-    assert isinstance(norm2._scale, mscale.LinearScale)
+    assert norm2._scale is None
     assert norm2.vmin == norm.vmin
-    assert norm2._scale is not norm._scale

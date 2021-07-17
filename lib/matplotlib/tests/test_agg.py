@@ -83,7 +83,7 @@ def test_long_path():
 @image_comparison(['agg_filter.png'], remove_text=True)
 def test_agg_filter():
     def smooth1d(x, window_len):
-        # copied from http://www.scipy.org/Cookbook/SignalSmooth
+        # copied from https://scipy-cookbook.readthedocs.io/
         s = np.r_[
             2*x[0] - x[window_len:1:-1], x, 2*x[-1] - x[-1:-window_len:-1]]
         w = np.hanning(window_len)
@@ -244,3 +244,10 @@ def test_pil_kwargs_tiff():
     im = Image.open(buf)
     tags = {TiffTags.TAGS_V2[k].name: v for k, v in im.tag_v2.items()}
     assert tags["ImageDescription"] == "test image"
+
+
+def test_draw_path_collection_error_handling():
+    fig, ax = plt.subplots()
+    ax.scatter([1], [1]).set_paths(path.Path([(0, 1), (2, 3)]))
+    with pytest.raises(TypeError):
+        fig.canvas.draw()

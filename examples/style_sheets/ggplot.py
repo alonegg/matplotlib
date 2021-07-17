@@ -8,7 +8,7 @@ emulate ggplot_ (a popular plotting package for R_).
 
 These settings were shamelessly stolen from [1]_ (with permission).
 
-.. [1] https://web.archive.org/web/20111215111010/http://www.huyng.com/archives/sane-color-scheme-for-matplotlib/691/
+.. [1] https://everyhue.me/posts/sane-color-scheme-for-matplotlib/
 
 .. _ggplot: https://ggplot2.tidyverse.org/
 .. _R: https://www.r-project.org/
@@ -45,8 +45,7 @@ width = 0.25
 ax3.bar(x, y1, width)
 ax3.bar(x + width, y2, width,
         color=list(plt.rcParams['axes.prop_cycle'])[2]['color'])
-ax3.set_xticks(x + width)
-ax3.set_xticklabels(['a', 'b', 'c', 'd', 'e'])
+ax3.set_xticks(x + width, labels=['a', 'b', 'c', 'd', 'e'])
 
 # circles with colors from default color cycle
 for i, color in enumerate(plt.rcParams['axes.prop_cycle']):

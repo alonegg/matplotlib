@@ -17,10 +17,14 @@ import sys
 import warnings
 
 import matplotlib
-from matplotlib._api import MatplotlibDeprecationWarning
 import sphinx
 
 from datetime import datetime
+import time
+
+# Parse year using SOURCE_DATE_EPOCH, falling back to current time.
+# https://reproducible-builds.org/specs/source-date-epoch/
+sourceyear = datetime.utcfromtimestamp(int(os.environ.get('SOURCE_DATE_EPOCH', time.time()))).year
 
 # If your extensions are in another directory, add it here. If the directory
 # is relative to the documentation root, use os.path.abspath to make it
@@ -69,8 +73,6 @@ extensions = [
 
 exclude_patterns = [
     'api/prev_api_changes/api_changes_*/*',
-    # Be sure to update users/whats_new.rst:
-    'users/prev_whats_new/whats_new_3.4.0.rst',
 ]
 
 
@@ -107,6 +109,7 @@ _check_dependencies()
 # gallery_order.py from the sphinxext folder provides the classes that
 # allow custom ordering of sections and subsections of the gallery
 import sphinxext.gallery_order as gallery_order
+
 # The following import is only necessary to monkey patch the signature later on
 from sphinx_gallery import gen_rst
 
@@ -117,7 +120,7 @@ autosummary_generate = True
 
 # we should ignore warnings coming from importing deprecated modules for
 # autodoc purposes, as this will disappear automatically when they are removed
-warnings.filterwarnings('ignore', category=MatplotlibDeprecationWarning,
+warnings.filterwarnings('ignore', category=DeprecationWarning,
                         module='importlib',  # used by sphinx.autodoc.importer
                         message=r'(\n|.)*module was deprecated.*')
 
@@ -126,7 +129,7 @@ autodoc_default_options = {'members': None, 'undoc-members': None}
 
 # make sure to ignore warnings that stem from simply inspecting deprecated
 # class-level attributes
-warnings.filterwarnings('ignore', category=MatplotlibDeprecationWarning,
+warnings.filterwarnings('ignore', category=DeprecationWarning,
                         module='sphinx.util.inspect')
 
 # missing-references names matches sphinx>=3 behavior, so we can't be nitpicky
@@ -143,7 +146,7 @@ intersphinx_mapping = {
     'ipykernel': ('https://ipykernel.readthedocs.io/en/latest/', None),
     'numpy': ('https://numpy.org/doc/stable/', None),
     'pandas': ('https://pandas.pydata.org/pandas-docs/stable/', None),
-    'pytest': ('https://pytest.org/en/latest/', None),
+    'pytest': ('https://pytest.org/en/stable/', None),
     'python': ('https://docs.python.org/3/', None),
     'scipy': ('https://docs.scipy.org/doc/scipy/reference/', None),
 }
@@ -157,7 +160,7 @@ sphinx_gallery_conf = {
     'doc_module': ('matplotlib', 'mpl_toolkits'),
     'reference_url': {
         'matplotlib': None,
-        'numpy': 'https://docs.scipy.org/doc/numpy/',
+        'numpy': 'https://numpy.org/doc/stable/',
         'scipy': 'https://docs.scipy.org/doc/scipy/reference/',
     },
     'backreferences_dir': Path('api') / Path('_as_gen'),
@@ -168,6 +171,10 @@ sphinx_gallery_conf = {
     'thumbnail_size': (320, 224),
     'compress_images': ('thumbnails', 'images'),
     'matplotlib_animations': True,
+    # 3.7 CI doc build should not use hidpi images during the testing phase
+    'image_srcset': [] if sys.version_info[:2] == (3, 7) else ["2x"],
+    'junit': ('../test-results/sphinx-gallery/junit.xml'
+              if 'CIRCLECI' in os.environ else ''),
 }
 
 plot_gallery = 'True'
@@ -204,16 +211,13 @@ except (subprocess.CalledProcessError, FileNotFoundError):
     SHA = matplotlib.__version__
 
 html_context = {
-    'sha': SHA,
-    # This will disable any analytics in the HTML templates (currently Google
-    # Analytics.)
-    'include_analytics': False,
+    "sha": SHA,
 }
 
 project = 'Matplotlib'
 copyright = ('2002 - 2012 John Hunter, Darren Dale, Eric Firing, '
              'Michael Droettboom and the Matplotlib development '
-             f'team; 2012 - {datetime.now().year} The Matplotlib development team')
+             f'team; 2012 - {sourceyear} The Matplotlib development team')
 
 
 # The default replacements for |version| and |release|, also used in various
@@ -227,7 +231,7 @@ release = version
 
 # There are two options for replacing |today|: either, you set today to some
 # non-false value, then it is used:
-#today = ''
+# today = ''
 # Else, today_fmt is used as the format for a strftime call.
 today_fmt = '%B %d, %Y'
 
@@ -235,15 +239,15 @@ today_fmt = '%B %d, %Y'
 unused_docs = []
 
 # If true, '()' will be appended to :func: etc. cross-reference text.
-#add_function_parentheses = True
+# add_function_parentheses = True
 
 # If true, the current module name will be prepended to all description
 # unit titles (such as .. function::).
-#add_module_names = True
+# add_module_names = True
 
 # If true, sectionauthor and moduleauthor directives will be shown in the
 # output. They are ignored by default.
-#show_authors = False
+# show_authors = False
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'
@@ -265,16 +269,50 @@ github_project_url = "https://github.com/matplotlib/matplotlib/"
 # The style sheet to use for HTML and HTML Help pages. A file of that name
 # must exist either in Sphinx' static/ path, or in one of the custom paths
 # given in html_static_path.
-#html_style = 'matplotlib.css'
-html_style = f'mpl.css?{SHA}'
+# html_style = 'matplotlib.css'
+# html_style = f"mpl.css?{SHA}"
+html_css_files = [
+    f"mpl.css?{SHA}",
+]
+
+html_theme = "pydata_sphinx_theme"
 
 # The name for this set of Sphinx documents.  If None, it defaults to
 # "<project> v<release> documentation".
-#html_title = None
+# html_title = None
 
 # The name of an image file (within the static path) to place at the top of
 # the sidebar.
-#html_logo = 'logo.png'
+html_logo = "_static/logo2.svg"
+html_theme_options = {
+    "logo_link": "index",
+    "icon_links": [
+        {
+            "name": "gitter",
+            "url": "https://gitter.im/matplotlib",
+            "icon": "fab fa-gitter",
+        },
+        {
+            "name": "discourse",
+            "url": "https://discourse.matplotlib.org",
+            "icon": "fab fa-discourse",
+        },
+        {
+            "name": "GitHub",
+            "url": "https://github.com/matplotlib/matplotlib",
+            "icon": "fab fa-github-square",
+        },
+        {
+            "name": "twitter",
+            "url": "https://twitter.com/matplotlib/",
+            "icon": "fab fa-twitter-square",
+        },
+
+    ],
+}
+include_analytics = False
+if include_analytics:
+    html_theme_options["google_analytics_id"] = "UA-55954603-1"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -293,23 +331,24 @@ html_last_updated_fmt = '%b %d, %Y'
 html_index = 'index.html'
 
 # Custom sidebar templates, maps document names to template names.
-#html_sidebars = {}
+# html_sidebars = {}
 
 # Custom sidebar templates, maps page names to templates.
 html_sidebars = {
-    'index': [
+    "index": [
         # 'sidebar_announcement.html',
-        'sidebar_versions.html',
-        'donate_sidebar.html'],
-    '**': ['localtoc.html', 'pagesource.html']
+        "sidebar_versions.html",
+        "donate_sidebar.html",
+    ],
+    # '**': ['localtoc.html', 'pagesource.html']
 }
 
 # If false, no module index is generated.
-#html_use_modindex = True
+# html_use_modindex = True
 html_domain_indices = ["py-modindex"]
 
 # If true, the reST sources are included in the HTML build as _sources/<name>.
-#html_copy_source = True
+# html_copy_source = True
 
 # If true, an OpenSearch description file will be output, and all pages will
 # contain a <link> tag referring to it.

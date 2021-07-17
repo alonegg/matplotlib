@@ -23,7 +23,7 @@ def _get_xdg_cache_dir():
     """
     Return the XDG cache directory.
 
-    See https://standards.freedesktop.org/basedir-spec/basedir-spec-latest.html
+    See https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
     """
     cache_dir = os.environ.get('XDG_CACHE_HOME')
     if not cache_dir:
@@ -413,7 +413,6 @@ class Matplotlib(SetupPackage):
         # image
         ext = Extension(
             "matplotlib._image", [
-                "src/_image.cpp",
                 "src/mplutils.cpp",
                 "src/_image_wrapper.cpp",
                 "src/py_converters.cpp",
@@ -432,7 +431,7 @@ class Matplotlib(SetupPackage):
         yield ext
         # qhull
         ext = Extension(
-            "matplotlib._qhull", ["src/qhull_wrap.c"],
+            "matplotlib._qhull", ["src/qhull_wrap.cpp"],
             define_macros=[("MPL_DEVNULL", os.devnull)])
         add_numpy_flags(ext)
         Qhull.add_flags(ext)
@@ -444,8 +443,8 @@ class Matplotlib(SetupPackage):
             ],
             include_dirs=["src"],
             # psapi library needed for finding Tcl/Tk at run time.
-            libraries=({"linux": ["dl"], "win32": ["psapi"],
-                        "cygwin": ["psapi"]}.get(sys.platform, [])),
+            libraries={"linux": ["dl"], "win32": ["comctl32", "psapi"],
+                       "cygwin": ["comctl32", "psapi"]}.get(sys.platform, []),
             extra_link_args={"win32": ["-mwindows"]}.get(sys.platform, []))
         add_numpy_flags(ext)
         add_libagg_flags(ext)

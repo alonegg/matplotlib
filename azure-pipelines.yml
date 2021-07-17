@@ -1,18 +1,18 @@
 # Python package
 # Create and test a Python package on multiple Python versions.
 # Add steps that analyze code, save the dist with the build record, publish to a PyPI-compatible index, and more:
-# https://docs.microsoft.com/azure/devops/pipelines/languages/python
+# https://docs.microsoft.com/en-us/azure/devops/pipelines/ecosystems/python?view=azure-devops
 
 strategy:
   matrix:
     Linux_py37:
-      vmImage: 'ubuntu-16.04'
+      vmImage: 'ubuntu-18.04'
       python.version: '3.7'
     Linux_py38:
-      vmImage: 'ubuntu-16.04'
+      vmImage: 'ubuntu-18.04'
       python.version: '3.8'
     Linux_py39:
-      vmImage: 'ubuntu-16.04'
+      vmImage: 'ubuntu-18.04'
       python.version: '3.9'
     macOS_py37:
       vmImage: 'macOS-10.15'

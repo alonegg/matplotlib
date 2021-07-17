@@ -42,7 +42,7 @@ pendulum <gallery/animation/double_pendulum_sgskip.py>` which uses
 
 .. raw:: html
 
-    <iframe width="420" height="315" src="http://www.youtube.com/embed/32cjc6V0OZY" frameborder="0" allowfullscreen></iframe>
+    <iframe width="420" height="315" src="https://www.youtube.com/embed/32cjc6V0OZY" frameborder="0" allowfullscreen></iframe>
 
 This should be considered as a beta release of the framework;
 please try it and provide feedback.
@@ -138,7 +138,7 @@ as 2D plotting, Ben Root has made several improvements to the
   improved to bring the class towards feature-parity with regular
   Axes objects
 
-* Documentation for :ref:`toolkit_mplot3d-tutorial` was significantly expanded
+* Documentation for :doc:`/tutorials/toolkits/mplot3d` was significantly expanded
 
 * Axis labels and orientation improved
 

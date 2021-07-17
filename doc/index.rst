@@ -2,6 +2,8 @@
 
 .. title:: Matplotlib: Python plotting
 
+.. module:: matplotlib
+
 Matplotlib: Visualization with Python
 -------------------------------------
 
@@ -61,7 +63,7 @@ Matplotlib makes easy things easy and hard things possible.
       Extend
 
       - Explore tailored functionality provided by
-        :doc:`third party packages <thirdpartypackages/index>`
+        `third party packages <https://matplotlib.org/mpl-third-party/>`_
       - Learn more about Matplotlib through the many
         :doc:`external learning resources <resources/index>`
 
@@ -160,15 +162,16 @@ helpers in `.axisartist`.
 Third party packages
 ====================
 
-A large number of :doc:`third party packages <thirdpartypackages/index>`
+A large number of 
+`third party packages <https://matplotlib.org/mpl-third-party/>`_
 extend and build on Matplotlib functionality, including several higher-level
 plotting interfaces (seaborn_, HoloViews_, ggplot_, ...), and a projection
 and mapping toolkit (Cartopy_).
 
 .. _seaborn: https://seaborn.pydata.org
 .. _HoloViews: https://holoviews.org
-.. _ggplot: http://ggplot.yhathq.com
-.. _Cartopy: https://scitools.org.uk/cartopy/docs/latest
+.. _ggplot: https://yhat.github.io/ggpy/
+.. _Cartopy: https://scitools.org.uk/cartopy/docs/latest/
 
 Citing Matplotlib
 =================
@@ -215,7 +218,7 @@ the NumFOCUS organization or to the `John Hunter Technology Fellowship
 The :doc:`Matplotlib license <users/license>` is based on the `Python Software
 Foundation (PSF) license <psf-license_>`_.
 
-.. _psf-license: https://www.python.org/psf/license
+.. _psf-license: https://docs.python.org/3/license.html
 
 There is an active developer community and a long list of people who have made
 significant :doc:`contributions <users/credits>`.

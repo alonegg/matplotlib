@@ -1,13 +1,14 @@
-from contextlib import nullcontext
 from datetime import datetime
 import io
 from pathlib import Path
 import platform
+from threading import Timer
 from types import SimpleNamespace
 import warnings
 
 import matplotlib as mpl
 from matplotlib import cbook, rcParams
+from matplotlib._api.deprecation import MatplotlibDeprecationWarning
 from matplotlib.testing.decorators import image_comparison, check_figures_equal
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -15,7 +16,6 @@ from matplotlib.ticker import AutoMinorLocator, FixedFormatter, ScalarFormatter
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import matplotlib.gridspec as gridspec
-from matplotlib.cbook import MatplotlibDeprecationWarning
 import numpy as np
 import pytest
 
@@ -150,8 +150,7 @@ def test_figure_legend():
 def test_gca():
     fig = plt.figure()
 
-    with pytest.warns(UserWarning):
-        # empty call to add_axes() will throw deprecation warning
+    with pytest.raises(TypeError):
         assert fig.add_axes() is None
 
     ax0 = fig.add_axes([0, 0, 1, 1])
@@ -248,14 +247,14 @@ def test_add_subplot_invalid():
     with pytest.raises(TypeError, match='takes 1 or 3 positional arguments '
                                         'but 4 were given'):
         fig.add_subplot(1, 2, 3, 4)
-    with pytest.warns(cbook.MatplotlibDeprecationWarning,
-                      match='Passing non-integers as three-element position '
-                            'specification is deprecated'):
+    with pytest.raises(ValueError,
+                       match="Number of rows must be a positive integer, "
+                             "not '2'"):
         fig.add_subplot('2', 2, 1)
-    with pytest.warns(cbook.MatplotlibDeprecationWarning,
-                      match='Passing non-integers as three-element position '
-                            'specification is deprecated'):
-        fig.add_subplot(2.0, 2, 1)
+    with pytest.raises(ValueError,
+                       match='Number of columns must be a positive integer, '
+                             'not 2.0'):
+        fig.add_subplot(2, 2.0, 1)
     _, ax = plt.subplots()
     with pytest.raises(ValueError,
                        match='The Subplot must have been created in the '
@@ -370,7 +369,7 @@ def test_figaspect():
     assert h / w == 1
 
 
-@pytest.mark.parametrize('which', [None, 'both', 'major', 'minor'])
+@pytest.mark.parametrize('which', ['both', 'major', 'minor'])
 def test_autofmt_xdate(which):
     date = ['3 Jan 2013', '4 Jan 2013', '5 Jan 2013', '6 Jan 2013',
             '7 Jan 2013', '8 Jan 2013', '9 Jan 2013', '10 Jan 2013',
@@ -399,11 +398,9 @@ def test_autofmt_xdate(which):
             'FixedFormatter should only be used together with FixedLocator')
         ax.xaxis.set_minor_formatter(FixedFormatter(minors))
 
-    with (pytest.warns(mpl.MatplotlibDeprecationWarning) if which is None else
-          nullcontext()):
-        fig.autofmt_xdate(0.2, angle, 'right', which)
+    fig.autofmt_xdate(0.2, angle, 'right', which)
 
-    if which in ('both', 'major', None):
+    if which in ('both', 'major'):
         for label in fig.axes[0].get_xticklabels(False, 'major'):
             assert int(label.get_rotation()) == angle
 
@@ -412,7 +409,7 @@ def test_autofmt_xdate(which):
             assert int(label.get_rotation()) == angle
 
 
-@pytest.mark.style('default')
+@mpl.style.context('default')
 def test_change_dpi():
     fig = plt.figure(figsize=(4, 4))
     fig.draw_no_output()
@@ -601,7 +598,7 @@ def test_removed_axis():
     fig.canvas.draw()
 
 
-@pytest.mark.style('mpl20')
+@mpl.style.context('mpl20')
 def test_picking_does_not_stale():
     fig, ax = plt.subplots()
     col = ax.scatter([0], [0], [1000], picker=True)
@@ -883,6 +880,20 @@ class TestSubplotMosaic:
         assert list(ax_dict) == list("ABCDEFGHI")
         assert list(fig.axes) == list(ax_dict.values())
 
+    def test_share_all(self):
+        layout = [
+            ["A", [["B", "C"],
+                   ["D", "E"]]],
+            ["F", "G"],
+            [".", [["H", [["I"],
+                          ["."]]]]]
+        ]
+        fig = plt.figure()
+        ax_dict = fig.subplot_mosaic(layout, sharex=True, sharey=True)
+        ax_dict["A"].set(xscale="log", yscale="logit")
+        assert all(ax.get_xscale() == "log" and ax.get_yscale() == "logit"
+                   for ax in ax_dict.values())
+
 
 def test_reused_gridspec():
     """Test that these all use the same gridspec"""
@@ -1068,3 +1079,34 @@ def test_add_axes_kwargs():
     assert ax1.name == 'rectilinear'
     assert ax1 is not ax
     plt.close()
+
+
+def test_ginput(recwarn):  # recwarn undoes warn filters at exit.
+    warnings.filterwarnings("ignore", "cannot show the figure")
+    fig, ax = plt.subplots()
+
+    def single_press():
+        fig.canvas.button_press_event(*ax.transData.transform((.1, .2)), 1)
+
+    Timer(.1, single_press).start()
+    assert fig.ginput() == [(.1, .2)]
+
+    def multi_presses():
+        fig.canvas.button_press_event(*ax.transData.transform((.1, .2)), 1)
+        fig.canvas.key_press_event("backspace")
+        fig.canvas.button_press_event(*ax.transData.transform((.3, .4)), 1)
+        fig.canvas.button_press_event(*ax.transData.transform((.5, .6)), 1)
+        fig.canvas.button_press_event(*ax.transData.transform((0, 0)), 2)
+
+    Timer(.1, multi_presses).start()
+    np.testing.assert_allclose(fig.ginput(3), [(.3, .4), (.5, .6)])
+
+
+def test_waitforbuttonpress(recwarn):  # recwarn undoes warn filters at exit.
+    warnings.filterwarnings("ignore", "cannot show the figure")
+    fig = plt.figure()
+    assert fig.waitforbuttonpress(timeout=.1) is None
+    Timer(.1, fig.canvas.key_press_event, ("z",)).start()
+    assert fig.waitforbuttonpress() is True
+    Timer(.1, fig.canvas.button_press_event, (0, 0, 1)).start()
+    assert fig.waitforbuttonpress() is False

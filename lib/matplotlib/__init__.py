@@ -85,7 +85,6 @@ import atexit
 from collections import namedtuple
 from collections.abc import MutableMapping
 import contextlib
-from distutils.version import LooseVersion
 import functools
 import importlib
 import inspect
@@ -103,6 +102,7 @@ import tempfile
 import warnings
 
 import numpy
+from packaging.version import parse as parse_version
 
 # cbook must import matplotlib only within function
 # definitions, so it is safe to import from it here.
@@ -161,13 +161,13 @@ def _check_versions():
             ("cycler", "0.10"),
             ("dateutil", "2.7"),
             ("kiwisolver", "1.0.1"),
-            ("numpy", "1.16"),
+            ("numpy", "1.17"),
             ("pyparsing", "2.2.1"),
     ]:
         module = importlib.import_module(modname)
-        if LooseVersion(module.__version__) < minver:
-            raise ImportError("Matplotlib requires {}>={}; you have {}"
-                              .format(modname, minver, module.__version__))
+        if parse_version(module.__version__) < parse_version(minver):
+            raise ImportError(f"Matplotlib requires {modname}>={minver}; "
+                              f"you have {module.__version__}")
 
 
 _check_versions()
@@ -274,8 +274,7 @@ def _get_executable_info(name):
     -------
     tuple
         A namedtuple with fields ``executable`` (`str`) and ``version``
-        (`distutils.version.LooseVersion`, or ``None`` if the version cannot be
-        determined).
+        (`packaging.Version`, or ``None`` if the version cannot be determined).
 
     Raises
     ------
@@ -305,8 +304,8 @@ def _get_executable_info(name):
             raise ExecutableNotFoundError(str(_ose)) from _ose
         match = re.search(regex, output)
         if match:
-            version = LooseVersion(match.group(1))
-            if min_ver is not None and version < min_ver:
+            version = parse_version(match.group(1))
+            if min_ver is not None and version < parse_version(min_ver):
                 raise ExecutableNotFoundError(
                     f"You have {args[0]} version {version} but the minimum "
                     f"version supported by Matplotlib is {min_ver}")
@@ -367,7 +366,7 @@ def _get_executable_info(name):
         else:
             path = "convert"
         info = impl([path, "--version"], r"^Version: ImageMagick (\S*)")
-        if info.version == "7.0.10-34":
+        if info.version == parse_version("7.0.10-34"):
             # https://github.com/ImageMagick/ImageMagick/issues/2720
             raise ExecutableNotFoundError(
                 f"You have ImageMagick {info.version}, which is unsupported")
@@ -375,9 +374,10 @@ def _get_executable_info(name):
     elif name == "pdftops":
         info = impl(["pdftops", "-v"], "^pdftops version (.*)",
                     ignore_exit_code=True)
-        if info and not ("3.0" <= info.version
-                         # poppler version numbers.
-                         or "0.9" <= info.version <= "1.0"):
+        if info and not (
+                3 <= info.version.major or
+                # poppler version numbers.
+                parse_version("0.9") <= info.version < parse_version("1.0")):
             raise ExecutableNotFoundError(
                 f"You have pdftops version {info.version} but the minimum "
                 f"version supported by Matplotlib is 3.0")
@@ -410,7 +410,7 @@ def _get_xdg_config_dir():
     Return the XDG configuration directory, according to the XDG base
     directory spec:
 
-    https://standards.freedesktop.org/basedir-spec/basedir-spec-latest.html
+    https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
     """
     return os.environ.get('XDG_CONFIG_HOME') or str(Path.home() / ".config")
 
@@ -419,17 +419,19 @@ def _get_xdg_cache_dir():
     """
     Return the XDG cache directory, according to the XDG base directory spec:
 
-    https://standards.freedesktop.org/basedir-spec/basedir-spec-latest.html
+    https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
     """
     return os.environ.get('XDG_CACHE_HOME') or str(Path.home() / ".cache")
 
 
-def _get_config_or_cache_dir(xdg_base):
+def _get_config_or_cache_dir(xdg_base_getter):
     configdir = os.environ.get('MPLCONFIGDIR')
     if configdir:
         configdir = Path(configdir).resolve()
-    elif sys.platform.startswith(('linux', 'freebsd')) and xdg_base:
-        configdir = Path(xdg_base, "matplotlib")
+    elif sys.platform.startswith(('linux', 'freebsd')):
+        # Only call _xdg_base_getter here so that MPLCONFIGDIR is tried first,
+        # as _xdg_base_getter can throw.
+        configdir = Path(xdg_base_getter(), "matplotlib")
     else:
         configdir = Path.home() / ".matplotlib"
     try:
@@ -457,7 +459,7 @@ def _get_config_or_cache_dir(xdg_base):
 @_logged_cached('CONFIGDIR=%s')
 def get_configdir():
     """
-    Return the string path of the the configuration directory.
+    Return the string path of the configuration directory.
 
     The directory is chosen as follows:
 
@@ -470,7 +472,7 @@ def get_configdir():
     4. Else, create a temporary directory, and use it as the configuration
        directory.
     """
-    return _get_config_or_cache_dir(_get_xdg_config_dir())
+    return _get_config_or_cache_dir(_get_xdg_config_dir)
 
 
 @_logged_cached('CACHEDIR=%s')
@@ -481,7 +483,7 @@ def get_cachedir():
     The procedure used to find the directory is the same as for
     _get_config_dir, except using ``$XDG_CACHE_HOME``/``$HOME/.cache`` instead.
     """
-    return _get_config_or_cache_dir(_get_xdg_cache_dir())
+    return _get_config_or_cache_dir(_get_xdg_cache_dir)
 
 
 @_logged_cached('matplotlib data path: %s')
@@ -1064,7 +1066,7 @@ def use(backend, *, force=True):
 
         - interactive backends:
           GTK3Agg, GTK3Cairo, MacOSX, nbAgg,
-          Qt4Agg, Qt4Cairo, Qt5Agg, Qt5Cairo,
+          Qt5Agg, Qt5Cairo,
           TkAgg, TkCairo, WebAgg, WX, WXAgg, WXCairo
 
         - non-interactive backends:
@@ -1072,11 +1074,16 @@ def use(backend, *, force=True):
 
         or a string of the form: ``module://my.module.name``.
 
+        Switching to an interactive backend is not possible if an unrelated
+        event loop has already been started (e.g., switching to GTK3Agg if a
+        TkAgg window has already been opened).  Switching to a non-interactive
+        backend is always possible.
+
     force : bool, default: True
         If True (the default), raise an `ImportError` if the backend cannot be
         set up (either because it fails to import, or because an incompatible
-        GUI interactive framework is already running); if False, ignore the
-        failure.
+        GUI interactive framework is already running); if False, silently
+        ignore the failure.
 
     See Also
     --------
@@ -1172,8 +1179,7 @@ def _init_tests():
                 "" if ft2font.__freetype_build_type__ == 'local' else "not "))
 
 
-@_api.delete_parameter("3.3", "recursionlimit")
-def test(verbosity=None, coverage=False, *, recursionlimit=0, **kwargs):
+def test(verbosity=None, coverage=False, **kwargs):
     """Run the matplotlib test suite."""
 
     try:
@@ -1190,8 +1196,6 @@ def test(verbosity=None, coverage=False, *, recursionlimit=0, **kwargs):
     old_recursionlimit = sys.getrecursionlimit()
     try:
         use('agg')
-        if recursionlimit:
-            sys.setrecursionlimit(recursionlimit)
 
         args = kwargs.pop('argv', [])
         provide_default_modules = True
@@ -1220,8 +1224,6 @@ def test(verbosity=None, coverage=False, *, recursionlimit=0, **kwargs):
     finally:
         if old_backend.lower() != 'agg':
             use(old_backend)
-        if recursionlimit:
-            sys.setrecursionlimit(old_recursionlimit)
 
     return retcode
 
@@ -1254,24 +1256,6 @@ def _label_from_arg(y, default_name):
     return None
 
 
-_DATA_DOC_TITLE = """
-
-Notes
------
-"""
-
-_DATA_DOC_APPENDIX = """
-
-.. note::
-    In addition to the above described arguments, this function can take
-    a *data* keyword argument. If such a *data* argument is given,
-{replaced}
-
-    Objects passed as **data** must support item access (``data[s]``) and
-    membership test (``s in data``).
-"""
-
-
 def _add_data_doc(docstring, replace_names):
     """
     Add documentation for a *data* field to the given docstring.
@@ -1294,17 +1278,26 @@ def _add_data_doc(docstring, replace_names):
             or replace_names is not None and len(replace_names) == 0):
         return docstring
     docstring = inspect.cleandoc(docstring)
-    repl = (
-        ("    every other argument can also be string ``s``, which is\n"
-         "    interpreted as ``data[s]`` (unless this raises an exception).")
-        if replace_names is None else
-        ("    the following arguments can also be string ``s``, which is\n"
-         "    interpreted as ``data[s]`` (unless this raises an exception):\n"
-         "    " + ", ".join(map("*{}*".format, replace_names))) + ".")
-    addendum = _DATA_DOC_APPENDIX.format(replaced=repl)
-    if _DATA_DOC_TITLE not in docstring:
-        addendum = _DATA_DOC_TITLE + addendum
-    return docstring + addendum
+
+    data_doc = ("""\
+    If given, all parameters also accept a string ``s``, which is
+    interpreted as ``data[s]`` (unless this raises an exception)."""
+                if replace_names is None else f"""\
+    If given, the following parameters also accept a string ``s``, which is
+    interpreted as ``data[s]`` (unless this raises an exception):
+
+    {', '.join(map('*{}*'.format, replace_names))}""")
+    # using string replacement instead of formatting has the advantages
+    # 1) simpler indent handling
+    # 2) prevent problems with formatting characters '{', '%' in the docstring
+    if _log.level <= logging.DEBUG:
+        # test_data_parameter_replacement() tests against these log messages
+        # make sure to keep message and test in sync
+        if "data : indexable object, optional" not in docstring:
+            _log.debug("data parameter docstring error: no data parameter")
+        if 'DATA_PARAMETER_PLACEHOLDER' not in docstring:
+            _log.debug("data parameter docstring error: missing placeholder")
+    return docstring.replace('    DATA_PARAMETER_PLACEHOLDER', data_doc)
 
 
 def _preprocess_data(func=None, *, replace_names=None, label_namer=None):

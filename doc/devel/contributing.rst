@@ -12,7 +12,7 @@ is expected to abide by our
 The project is hosted on
 https://github.com/matplotlib/matplotlib
 
-Contributor Incubator
+Contributor incubator
 =====================
 
 If you are interested in becoming a regular contributor to Matplotlib, but
@@ -28,7 +28,7 @@ in community work, or get "pre-review" on your PR.
 
 .. _new_contributors:
 
-Issues for New Contributors
+Issues for new contributors
 ---------------------------
 
 While any contributions are welcome, we have marked some issues as
@@ -77,6 +77,8 @@ We have preloaded the issue creation page with a Markdown template that you can
 use to organize this information.
 
 Thank you for your help in keeping bug reports complete, targeted and descriptive.
+
+.. _request-a-new-feature:
 
 Requesting a new feature
 ========================
@@ -140,7 +142,7 @@ Finally, go to the web page of your fork of the Matplotlib repo, and click
 
 .. seealso::
 
-  * `Git documentation <https://git-scm.com/documentation>`_
+  * `Git documentation <https://git-scm.com/doc>`_
   * `Git-Contributing to a Project <https://git-scm.com/book/en/v2/GitHub-Contributing-to-a-Project>`_
   * `Introduction to GitHub  <https://lab.github.com/githubtraining/introduction-to-github>`_
   * :ref:`development-workflow` for best practices for Matplotlib
@@ -160,19 +162,31 @@ rules before submitting a pull request:
   appropriate. Use the `numpy docstring standard
   <https://numpydoc.readthedocs.io/en/latest/format.html>`_.
 
-* Formatting should follow the recommendations of `PEP8
-  <https://www.python.org/dev/peps/pep-0008/>`__. You should consider
-  installing/enabling automatic PEP8 checking in your editor.  Part of the test
-  suite is checking PEP8 compliance, things go smoother if the code is mostly
-  PEP8 compliant to begin with.
+* Formatting should follow the recommendations of PEP8_, as enforced by
+  flake8_.  You can check flake8 compliance from the command line with ::
+
+    python -m pip install flake8
+    flake8 /path/to/module.py
+
+  or your editor may provide integration with it.  Note that Matplotlib
+  intentionally does not use the black_ auto-formatter (1__), in particular due
+  to its unability to understand the semantics of mathematical expressions
+  (2__, 3__).
+
+  .. _PEP8: https://www.python.org/dev/peps/pep-0008/
+  .. _flake8: https://flake8.pycqa.org/
+  .. _black: https://black.readthedocs.io/
+  .. __: https://github.com/matplotlib/matplotlib/issues/18796
+  .. __: https://github.com/psf/black/issues/148
+  .. __: https://github.com/psf/black/issues/1984
 
 * Each high-level plotting function should have a simple example in the
   ``Example`` section of the docstring.  This should be as simple as possible
   to demonstrate the method.  More complex examples should go in the
   ``examples`` tree.
 
-* Changes (both new features and bugfixes) should be tested. See :ref:`testing`
-  for more details.
+* Changes (both new features and bugfixes) should have good test coverage. See
+  :ref:`testing` for more details.
 
 * Import the following modules using the standard scipy conventions::
 
@@ -200,19 +214,6 @@ rules before submitting a pull request:
 
 * See below for additional points about :ref:`keyword-argument-processing`, if
   applicable for your pull request.
-
-In addition, you can check for common programming errors with the following
-tools:
-
-* Code with a good unittest coverage (at least 70%, better 100%), check with::
-
-   python -m pip install coverage
-   python -m pytest --cov=matplotlib --showlocals -v
-
-* No pyflakes warnings, check with::
-
-   python -m pip install pyflakes
-   pyflakes path/to/module.py
 
 .. note::
 

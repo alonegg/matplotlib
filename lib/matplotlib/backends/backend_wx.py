@@ -36,7 +36,7 @@ import wx
 _log = logging.getLogger(__name__)
 
 # the True dots per inch on the screen; should be display dependent; see
-# http://groups.google.com/groups?q=screen+dpi+x11&hl=en&lr=&ie=UTF-8&oe=UTF-8&safe=off&selm=7077.26e81ad5%40swift.cs.tcd.ie&rnum=5
+# http://groups.google.com/d/msg/comp.lang.postscript/-/omHAc9FEuAsJ?hl=en
 # for some info about screen dpi
 PIXELS_PER_INCH = 75
 
@@ -115,7 +115,7 @@ class RendererWx(RendererBase):
 
     # wxPython allows for portable font styles, choosing them appropriately for
     # the target platform. Map some standard font names to the portable styles.
-    # QUESTION: Is it be wise to agree standard fontnames across all backends?
+    # QUESTION: Is it wise to agree to standard fontnames across all backends?
     fontnames = {
         'Sans': wx.FONTFAMILY_SWISS,
         'Roman': wx.FONTFAMILY_ROMAN,
@@ -1043,12 +1043,14 @@ def _set_frame_icon(frame):
     frame.SetIcons(bundle)
 
 
-cursord = {
+cursord = {  # deprecated in Matplotlib 3.5.
     cursors.MOVE: wx.CURSOR_HAND,
     cursors.HAND: wx.CURSOR_HAND,
     cursors.POINTER: wx.CURSOR_ARROW,
     cursors.SELECT_REGION: wx.CURSOR_CROSS,
     cursors.WAIT: wx.CURSOR_WAIT,
+    cursors.RESIZE_HORIZONTAL: wx.CURSOR_SIZEWE,
+    cursors.RESIZE_VERTICAL: wx.CURSOR_SIZENS,
 }
 
 

@@ -342,9 +342,17 @@ class FormWidget(QtWidgets.QWidget):
             elif isinstance(value, Real):
                 value = float(str(field.text()))
             elif isinstance(value, datetime.datetime):
-                value = field.dateTime().toPyDateTime()
+                datetime_ = field.dateTime()
+                if hasattr(datetime_, "toPyDateTime"):
+                    value = datetime_.toPyDateTime()
+                else:
+                    value = datetime_.toPython()
             elif isinstance(value, datetime.date):
-                value = field.date().toPyDate()
+                date_ = field.date()
+                if hasattr(date_, "toPyDate"):
+                    value = date_.toPyDate()
+                else:
+                    value = date_.toPython()
             else:
                 value = eval(str(field.text()))
             valuelist.append(value)
@@ -470,6 +478,7 @@ class FormDialog(QtWidgets.QDialog):
 
     def accept(self):
         self.data = self.formwidget.get()
+        self.apply_callback(self.data)
         super().accept()
 
     def reject(self):
@@ -518,8 +527,13 @@ def fedit(data, title="", comment="", icon=None, parent=None, apply=None):
     if QtWidgets.QApplication.startingUp():
         _app = QtWidgets.QApplication([])
     dialog = FormDialog(data, title, comment, icon, parent, apply)
-    if dialog.exec_():
-        return dialog.get()
+
+    if parent is not None:
+        if hasattr(parent, "_fedit_dialog"):
+            parent._fedit_dialog.close()
+        parent._fedit_dialog = dialog
+
+    dialog.show()
 
 
 if __name__ == "__main__":
@@ -546,7 +560,7 @@ if __name__ == "__main__":
                 (datalist, "Category 2", "Category 2 comment"),
                 (datalist, "Category 3", "Category 3 comment"))
 
-    #--------- datalist example
+    # --------- datalist example
     datalist = create_datalist_example()
 
     def apply_test(data):
@@ -555,11 +569,11 @@ if __name__ == "__main__":
                            comment="This is just an <b>example</b>.",
                            apply=apply_test))
 
-    #--------- datagroup example
+    # --------- datagroup example
     datagroup = create_datagroup_example()
     print("result:", fedit(datagroup, "Global title"))
 
-    #--------- datagroup inside a datagroup example
+    # --------- datagroup inside a datagroup example
     datalist = create_datalist_example()
     datagroup = create_datagroup_example()
     print("result:", fedit(((datagroup, "Title 1", "Tab 1 comment"),

@@ -601,22 +601,26 @@ def test_patch_modification():
 @check_figures_equal(extensions=['png'])
 def test_patch_collection_modification(fig_test, fig_ref):
     # Test that modifying Patch3DCollection properties after creation works.
-    patch = Circle((0, 0), 0.05)
-    c = art3d.Patch3DCollection([patch], linewidths=3)
+    patch1 = Circle((0, 0), 0.05)
+    patch2 = Circle((0.1, 0.1), 0.03)
+    facecolors = np.array([[0., 0.5, 0., 1.], [0.5, 0., 0., 0.5]])
+    c = art3d.Patch3DCollection([patch1, patch2], linewidths=3)
 
     ax_test = fig_test.add_subplot(projection='3d')
     ax_test.add_collection3d(c)
     c.set_edgecolor('C2')
-    c.set_facecolor('C3')
+    c.set_facecolor(facecolors)
     c.set_alpha(0.7)
     assert c.get_depthshade()
     c.set_depthshade(False)
     assert not c.get_depthshade()
 
-    patch = Circle((0, 0), 0.05)
-    c = art3d.Patch3DCollection([patch], linewidths=3,
-                                edgecolor='C2', facecolor='C3', alpha=0.7,
-                                depthshade=False)
+    patch1 = Circle((0, 0), 0.05)
+    patch2 = Circle((0.1, 0.1), 0.03)
+    facecolors = np.array([[0., 0.5, 0., 1.], [0.5, 0., 0., 0.5]])
+    c = art3d.Patch3DCollection([patch1, patch2], linewidths=3,
+                                edgecolor='C2', facecolor=facecolors,
+                                alpha=0.7, depthshade=False)
 
     ax_ref = fig_ref.add_subplot(projection='3d')
     ax_ref.add_collection3d(c)
@@ -1399,7 +1403,7 @@ def test_pan():
     assert z_center != pytest.approx(z_center0)
 
 
-@pytest.mark.style('default')
+@mpl.style.context('default')
 @check_figures_equal(extensions=["png"])
 def test_scalarmap_update(fig_test, fig_ref):
 
@@ -1523,3 +1527,93 @@ def test_scatter_spiral():
 
     # force at least 1 draw!
     fig.canvas.draw()
+
+
+@pytest.mark.parametrize(
+    "vertical_axis, proj_expected, axis_lines_expected, tickdirs_expected",
+    [
+        (
+            "z",
+            [
+                [0.0, 1.142857, 0.0, -0.571429],
+                [0.0, 0.0, 0.857143, -0.428571],
+                [0.0, 0.0, 0.0, -10.0],
+                [-1.142857, 0.0, 0.0, 10.571429],
+            ],
+            [
+                ([0.05617978, 0.06329114], [-0.04213483, -0.04746835]),
+                ([-0.06329114, 0.06329114], [-0.04746835, -0.04746835]),
+                ([-0.06329114, -0.06329114], [-0.04746835, 0.04746835]),
+            ],
+            [1, 0, 0],
+        ),
+        (
+            "y",
+            [
+                [1.142857, 0.0, 0.0, -0.571429],
+                [0.0, 0.857143, 0.0, -0.428571],
+                [0.0, 0.0, 0.0, -10.0],
+                [0.0, 0.0, -1.142857, 10.571429],
+            ],
+            [
+                ([0.06329114, -0.06329114], [-0.04746835, -0.04746835]),
+                ([-0.06329114, -0.06329114], [0.04746835, -0.04746835]),
+                ([0.05617978, 0.06329114], [-0.04213483, -0.04746835]),
+            ],
+            [2, 2, 0],
+        ),
+        (
+            "x",
+            [
+                [0.0, 0.0, 1.142857, -0.571429],
+                [0.857143, 0.0, 0.0, -0.428571],
+                [0.0, 0.0, 0.0, -10.0],
+                [0.0, -1.142857, 0.0, 10.571429],
+            ],
+            [
+                ([-0.06329114, -0.06329114], [-0.04746835, 0.04746835]),
+                ([0.06329114, 0.05617978], [-0.04746835, -0.04213483]),
+                ([0.06329114, -0.06329114], [-0.04746835, -0.04746835]),
+            ],
+            [1, 2, 1],
+        ),
+    ],
+)
+def test_view_init_vertical_axis(
+    vertical_axis, proj_expected, axis_lines_expected, tickdirs_expected
+):
+    """
+    Test the actual projection, axis lines and ticks matches expected values.
+
+    Parameters
+    ----------
+    vertical_axis : str
+        Axis to align vertically.
+    proj_expected : ndarray
+        Expected values from ax.get_proj().
+    axis_lines_expected : tuple of arrays
+        Edgepoints of the axis line. Expected values retrieved according
+        to ``ax.get_[xyz]axis().line.get_data()``.
+    tickdirs_expected : list of int
+        indexes indicating which axis to create a tick line along.
+    """
+    rtol = 2e-06
+    ax = plt.subplot(1, 1, 1, projection="3d")
+    ax.view_init(azim=0, elev=0, vertical_axis=vertical_axis)
+    ax.figure.canvas.draw()
+
+    # Assert the projection matrix:
+    proj_actual = ax.get_proj()
+    np.testing.assert_allclose(proj_expected, proj_actual, rtol=rtol)
+
+    for i, axis in enumerate([ax.get_xaxis(), ax.get_yaxis(), ax.get_zaxis()]):
+        # Assert black lines are correctly aligned:
+        axis_line_expected = axis_lines_expected[i]
+        axis_line_actual = axis.line.get_data()
+        np.testing.assert_allclose(axis_line_expected, axis_line_actual,
+                                   rtol=rtol)
+
+        # Assert ticks are correctly aligned:
+        tickdir_expected = tickdirs_expected[i]
+        tickdir_actual = axis._get_tickdir()
+        np.testing.assert_array_equal(tickdir_expected, tickdir_actual)

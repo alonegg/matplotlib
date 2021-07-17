@@ -67,6 +67,8 @@ def streamplot(axes, x, y, u, v, density=1, linewidth=None, color=None,
         Maximum length of streamline in axes coordinates.
     integration_direction : {'forward', 'backward', 'both'}, default: 'both'
         Integrate the streamline in forward, backward or both directions.
+    data : indexable object, optional
+        DATA_PARAMETER_PLACEHOLDER
 
     Returns
     -------
@@ -234,13 +236,7 @@ def streamplot(axes, x, y, u, v, density=1, linewidth=None, color=None,
 
 class StreamplotSet:
 
-    def __init__(self, lines, arrows, **kwargs):
-        if kwargs:
-            _api.warn_deprecated(
-                "3.3",
-                message="Passing arbitrary keyword arguments to StreamplotSet "
-                        "is deprecated since %(since) and will become an "
-                        "error %(removal)s.")
+    def __init__(self, lines, arrows):
         self.lines = lines
         self.arrows = arrows
 

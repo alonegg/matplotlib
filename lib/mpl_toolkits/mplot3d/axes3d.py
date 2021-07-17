@@ -40,6 +40,7 @@ from . import proj3d
 from . import axis3d
 
 
+@docstring.interpd
 @cbook._define_aliases({
     "xlim3d": ["xlim"], "ylim3d": ["ylim"], "zlim3d": ["zlim"]})
 class Axes3D(Axes):
@@ -47,7 +48,9 @@ class Axes3D(Axes):
     3D axes object.
     """
     name = '3d'
-    _shared_z_axes = cbook.Grouper()
+
+    _axis_names = ("x", "y", "z")
+    Axes._shared_axes["z"] = cbook.Grouper()
 
     def __init__(
             self, fig, rect=None, *args,
@@ -90,7 +93,7 @@ class Axes3D(Axes):
         **kwargs
             Other optional keyword arguments:
 
-            %(Axes3D_kwdoc)s
+            %(Axes3D:kwdoc)s
         """
 
         if rect is None:
@@ -105,7 +108,6 @@ class Axes3D(Axes):
         self.zz_viewLim = Bbox.unit()
         self.xy_dataLim = Bbox.unit()
         self.zz_dataLim = Bbox.unit()
-        self._stale_viewlim_z = False
 
         # inhibit autoscale_view until the axes are defined
         # they can't be defined until Axes.__init__ has been called
@@ -113,7 +115,7 @@ class Axes3D(Axes):
 
         self._sharez = sharez
         if sharez is not None:
-            self._shared_z_axes.join(self, sharez)
+            self._shared_axes["z"].join(self, sharez)
             self._adjustable = 'datalim'
 
         auto_add_to_figure = kwargs.pop('auto_add_to_figure', True)
@@ -214,27 +216,6 @@ class Axes3D(Axes):
     w_zaxis = _api.deprecated("3.1", alternative="zaxis", pending=True)(
         property(lambda self: self.zaxis))
 
-    def _get_axis_list(self):
-        return super()._get_axis_list() + (self.zaxis, )
-
-    def _unstale_viewLim(self):
-        # We should arrange to store this information once per share-group
-        # instead of on every axis.
-        scalex = any(ax._stale_viewlim_x
-                     for ax in self._shared_x_axes.get_siblings(self))
-        scaley = any(ax._stale_viewlim_y
-                     for ax in self._shared_y_axes.get_siblings(self))
-        scalez = any(ax._stale_viewlim_z
-                     for ax in self._shared_z_axes.get_siblings(self))
-        if scalex or scaley or scalez:
-            for ax in self._shared_x_axes.get_siblings(self):
-                ax._stale_viewlim_x = False
-            for ax in self._shared_y_axes.get_siblings(self):
-                ax._stale_viewlim_y = False
-            for ax in self._shared_z_axes.get_siblings(self):
-                ax._stale_viewlim_z = False
-            self.autoscale_view(scalex=scalex, scaley=scaley, scalez=scalez)
-
     def unit_cube(self, vals=None):
         minx, maxx, miny, maxy, minz, maxz = vals or self.get_w_lims()
         return [(minx, miny, minz),
@@ -279,7 +260,7 @@ class Axes3D(Axes):
         the axes with the data limits.
 
         To simulate having equal aspect in data space, set the ratio
-        of your data limits to match the value of `~.get_box_aspect`.
+        of your data limits to match the value of `.get_box_aspect`.
         To control box aspect ratios use `~.Axes3D.set_box_aspect`.
 
         Parameters
@@ -315,7 +296,7 @@ class Axes3D(Axes):
             etc.
             =====   =====================
 
-            See `.set_anchor` for further details.
+            See `~.Axes.set_anchor` for further details.
 
         share : bool, default: False
             If ``True``, apply the settings to all shared Axes.
@@ -329,37 +310,8 @@ class Axes3D(Axes):
                 "Axes3D currently only supports the aspect argument "
                 f"'auto'. You passed in {aspect!r}."
             )
-
-        if share:
-            axes = {*self._shared_x_axes.get_siblings(self),
-                    *self._shared_y_axes.get_siblings(self),
-                    *self._shared_z_axes.get_siblings(self),
-                    }
-        else:
-            axes = {self}
-
-        for ax in axes:
-            ax._aspect = aspect
-            ax.stale = True
-
-        if anchor is not None:
-            self.set_anchor(anchor, share=share)
-
-    def set_anchor(self, anchor, share=False):
-        # docstring inherited
-        if not (anchor in mtransforms.Bbox.coefs or len(anchor) == 2):
-            raise ValueError('anchor must be among %s' %
-                             ', '.join(mtransforms.Bbox.coefs))
-        if share:
-            axes = {*self._shared_x_axes.get_siblings(self),
-                    *self._shared_y_axes.get_siblings(self),
-                    *self._shared_z_axes.get_siblings(self),
-                    }
-        else:
-            axes = {self}
-        for ax in axes:
-            ax._anchor = anchor
-            ax.stale = True
+        super().set_aspect(
+            aspect, adjustable=adjustable, anchor=anchor, share=share)
 
     def set_box_aspect(self, aspect, *, zoom=1):
         """
@@ -538,31 +490,22 @@ class Axes3D(Axes):
         pass
 
     def get_autoscale_on(self):
-        """
-        Get whether autoscaling is applied for all axes on plot commands
-        """
+        # docstring inherited
         return super().get_autoscale_on() and self.get_autoscalez_on()
 
     def get_autoscalez_on(self):
-        """
-        Get whether autoscaling for the z-axis is applied on plot commands
-        """
+        """Return whether the z-axis is autoscaled."""
         return self._autoscaleZon
 
     def set_autoscale_on(self, b):
-        """
-        Set whether autoscaling is applied on plot commands
-
-        Parameters
-        ----------
-        b : bool
-        """
+        # docstring inherited
         super().set_autoscale_on(b)
         self.set_autoscalez_on(b)
 
     def set_autoscalez_on(self, b):
         """
-        Set whether autoscaling for the z-axis is applied on plot commands
+        Set whether the z-axis is autoscaled on the next draw or call to
+        `.Axes.autoscale_view`.
 
         Parameters
         ----------
@@ -572,21 +515,21 @@ class Axes3D(Axes):
 
     def set_xmargin(self, m):
         # docstring inherited
-        scalez = self._stale_viewlim_z
+        scalez = self._stale_viewlims["z"]
         super().set_xmargin(m)
         # Superclass is 2D and will call _request_autoscale_view with defaults
         # for unknown Axis, which would be scalez=True, but it shouldn't be for
         # this call, so restore it.
-        self._stale_viewlim_z = scalez
+        self._stale_viewlims["z"] = scalez
 
     def set_ymargin(self, m):
         # docstring inherited
-        scalez = self._stale_viewlim_z
+        scalez = self._stale_viewlims["z"]
         super().set_ymargin(m)
         # Superclass is 2D and will call _request_autoscale_view with defaults
         # for unknown Axis, which would be scalez=True, but it shouldn't be for
         # this call, so restore it.
-        self._stale_viewlim_z = scalez
+        self._stale_viewlims["z"] = scalez
 
     def set_zmargin(self, m):
         """
@@ -711,19 +654,6 @@ class Axes3D(Axes):
         # Let autoscale_view figure out how to use this data.
         self.autoscale_view()
 
-    # API could be better, right now this is just to match the old calls to
-    # autoscale_view() after each plotting method.
-    def _request_autoscale_view(self, tight=None, scalex=True, scaley=True,
-                                scalez=True):
-        if tight is not None:
-            self._tight = tight
-        if scalex:
-            self._stale_viewlim_x = True  # Else keep old state.
-        if scaley:
-            self._stale_viewlim_y = True
-        if scalez:
-            self._stale_viewlim_z = True
-
     def autoscale_view(self, tight=None, scalex=True, scaley=True,
                        scalez=True):
         """
@@ -748,7 +678,7 @@ class Axes3D(Axes):
             _tight = self._tight = bool(tight)
 
         if scalex and self._autoscaleXon:
-            self._shared_x_axes.clean()
+            self._shared_axes["x"].clean()
             x0, x1 = self.xy_dataLim.intervalx
             xlocator = self.xaxis.get_major_locator()
             x0, x1 = xlocator.nonsingular(x0, x1)
@@ -761,7 +691,7 @@ class Axes3D(Axes):
             self.set_xbound(x0, x1)
 
         if scaley and self._autoscaleYon:
-            self._shared_y_axes.clean()
+            self._shared_axes["y"].clean()
             y0, y1 = self.xy_dataLim.intervaly
             ylocator = self.yaxis.get_major_locator()
             y0, y1 = ylocator.nonsingular(y0, y1)
@@ -774,7 +704,7 @@ class Axes3D(Axes):
             self.set_ybound(y0, y1)
 
         if scalez and self._autoscaleZon:
-            self._shared_z_axes.clean()
+            self._shared_axes["z"].clean()
             z0, z1 = self.zz_dataLim.intervalx
             zlocator = self.zaxis.get_major_locator()
             z0, z1 = zlocator.nonsingular(z0, z1)
@@ -833,15 +763,15 @@ class Axes3D(Axes):
         self.xy_viewLim.intervalx = (left, right)
 
         # Mark viewlims as no longer stale without triggering an autoscale.
-        for ax in self._shared_x_axes.get_siblings(self):
-            ax._stale_viewlim_x = False
+        for ax in self._shared_axes["x"].get_siblings(self):
+            ax._stale_viewlims["x"] = False
         if auto is not None:
             self._autoscaleXon = bool(auto)
 
         if emit:
             self.callbacks.process('xlim_changed', self)
             # Call all of the other x-axes that are shared with this one
-            for other in self._shared_x_axes.get_siblings(self):
+            for other in self._shared_axes["x"].get_siblings(self):
                 if other is not self:
                     other.set_xlim(self.xy_viewLim.intervalx,
                                    emit=False, auto=auto)
@@ -891,15 +821,15 @@ class Axes3D(Axes):
         self.xy_viewLim.intervaly = (bottom, top)
 
         # Mark viewlims as no longer stale without triggering an autoscale.
-        for ax in self._shared_y_axes.get_siblings(self):
-            ax._stale_viewlim_y = False
+        for ax in self._shared_axes["y"].get_siblings(self):
+            ax._stale_viewlims["y"] = False
         if auto is not None:
             self._autoscaleYon = bool(auto)
 
         if emit:
             self.callbacks.process('ylim_changed', self)
             # Call all of the other y-axes that are shared with this one
-            for other in self._shared_y_axes.get_siblings(self):
+            for other in self._shared_axes["y"].get_siblings(self):
                 if other is not self:
                     other.set_ylim(self.xy_viewLim.intervaly,
                                    emit=False, auto=auto)
@@ -949,15 +879,15 @@ class Axes3D(Axes):
         self.zz_viewLim.intervalx = (bottom, top)
 
         # Mark viewlims as no longer stale without triggering an autoscale.
-        for ax in self._shared_z_axes.get_siblings(self):
-            ax._stale_viewlim_z = False
+        for ax in self._shared_axes["z"].get_siblings(self):
+            ax._stale_viewlims["z"] = False
         if auto is not None:
             self._autoscaleZon = bool(auto)
 
         if emit:
             self.callbacks.process('zlim_changed', self)
             # Call all of the other y-axes that are shared with this one
-            for other in self._shared_z_axes.get_siblings(self):
+            for other in self._shared_axes["z"].get_siblings(self):
                 if other is not self:
                     other.set_zlim(self.zz_viewLim.intervalx,
                                    emit=False, auto=auto)
@@ -1045,17 +975,24 @@ class Axes3D(Axes):
         """Currently not implemented for 3D axes, and returns *None*."""
         return None
 
-    def view_init(self, elev=None, azim=None):
+    def view_init(self, elev=None, azim=None, vertical_axis="z"):
         """
         Set the elevation and azimuth of the axes in degrees (not radians).
 
         This can be used to rotate the axes programmatically.
 
-        'elev' stores the elevation angle in the z plane (in degrees).
-        'azim' stores the azimuth angle in the (x, y) plane (in degrees).
-
-        if 'elev' or 'azim' are None (default), then the initial value
-        is used which was specified in the :class:`Axes3D` constructor.
+        Parameters
+        ----------
+        elev : float, default: None
+            The elevation angle in the vertical plane in degrees.
+            If None then the initial value as specified in the `Axes3D`
+            constructor is used.
+        azim : float, default: None
+            The azimuth angle in the horizontal plane in degrees.
+            If None then the initial value as specified in the `Axes3D`
+            constructor is used.
+        vertical_axis : {"z", "x", "y"}, default: "z"
+            The axis to align vertically. *azim* rotates about this axis.
         """
 
         self.dist = 10
@@ -1070,6 +1007,10 @@ class Axes3D(Axes):
         else:
             self.azim = azim
 
+        self._vertical_axis = _api.check_getitem(
+            dict(x=0, y=1, z=2), vertical_axis=vertical_axis
+        )
+
     def set_proj_type(self, proj_type):
         """
         Set the projection type.
@@ -1083,47 +1024,60 @@ class Axes3D(Axes):
             'ortho': proj3d.ortho_transformation,
         }, proj_type=proj_type)
 
+    def _roll_to_vertical(self, arr):
+        """Roll arrays to match the different vertical axis."""
+        return np.roll(arr, self._vertical_axis - 2)
+
     def get_proj(self):
         """Create the projection matrix from the current viewing position."""
+
+        # Transform to uniform world coordinates 0-1, 0-1, 0-1
+        box_aspect = self._roll_to_vertical(self._box_aspect)
+        worldM = proj3d.world_transformation(
+            *self.get_xlim3d(),
+            *self.get_ylim3d(),
+            *self.get_zlim3d(),
+            pb_aspect=box_aspect,
+        )
+
+        # Look into the middle of the new coordinates:
+        R = 0.5 * box_aspect
+
         # elev stores the elevation angle in the z plane
         # azim stores the azimuth angle in the x,y plane
-        #
-        # dist is the distance of the eye viewing point from the object
-        # point.
+        elev_rad = np.deg2rad(self.elev)
+        azim_rad = np.deg2rad(self.azim)
 
-        relev, razim = np.pi * self.elev/180, np.pi * self.azim/180
+        # Coordinates for a point that rotates around the box of data.
+        # p0, p1 corresponds to rotating the box only around the
+        # vertical axis.
+        # p2 corresponds to rotating the box only around the horizontal
+        # axis.
+        p0 = np.cos(elev_rad) * np.cos(azim_rad)
+        p1 = np.cos(elev_rad) * np.sin(azim_rad)
+        p2 = np.sin(elev_rad)
 
-        xmin, xmax = self.get_xlim3d()
-        ymin, ymax = self.get_ylim3d()
-        zmin, zmax = self.get_zlim3d()
+        # When changing vertical axis the coordinates changes as well.
+        # Roll the values to get the same behaviour as the default:
+        ps = self._roll_to_vertical([p0, p1, p2])
 
-        # transform to uniform world coordinates 0-1, 0-1, 0-1
-        worldM = proj3d.world_transformation(xmin, xmax,
-                                             ymin, ymax,
-                                             zmin, zmax,
-                                             pb_aspect=self._box_aspect)
+        # The coordinates for the eye viewing point. The eye is looking
+        # towards the middle of the box of data from a distance:
+        eye = R + self.dist * ps
 
-        # look into the middle of the new coordinates
-        R = self._box_aspect / 2
-
-        xp = R[0] + np.cos(razim) * np.cos(relev) * self.dist
-        yp = R[1] + np.sin(razim) * np.cos(relev) * self.dist
-        zp = R[2] + np.sin(relev) * self.dist
-        E = np.array((xp, yp, zp))
-
-        self.eye = E
-        self.vvec = R - E
+        # TODO: Is this being used somewhere? Can it be removed?
+        self.eye = eye
+        self.vvec = R - eye
         self.vvec = self.vvec / np.linalg.norm(self.vvec)
 
-        if abs(relev) > np.pi/2:
-            # upside down
-            V = np.array((0, 0, -1))
-        else:
-            V = np.array((0, 0, 1))
-        zfront, zback = -self.dist, self.dist
+        # Define which axis should be vertical. A negative value
+        # indicates the plot is upside down and therefore the values
+        # have been reversed:
+        V = np.zeros(3)
+        V[self._vertical_axis] = -1 if abs(elev_rad) > 0.5 * np.pi else 1
 
-        viewM = proj3d.view_transformation(E, R, V)
-        projM = self._projection(zfront, zback)
+        viewM = proj3d.view_transformation(eye, R, V)
+        projM = self._projection(-self.dist, self.dist)
         M0 = np.dot(viewM, worldM)
         M = np.dot(projM, M0)
         return M
@@ -1371,7 +1325,8 @@ class Axes3D(Axes):
         self._frameon = bool(b)
         self.stale = True
 
-    def grid(self, b=True, **kwargs):
+    @_api.rename_parameter("3.5", "b", "visible")
+    def grid(self, visible=True, **kwargs):
         """
         Set / unset 3D grid.
 
@@ -1383,8 +1338,8 @@ class Axes3D(Axes):
         """
         # TODO: Operate on each axes separately
         if len(kwargs):
-            b = True
-        self._draw_grid = b
+            visible = True
+        self._draw_grid = visible
         self.stale = True
 
     def locator_params(self, axis='both', tight=None, **kwargs):
@@ -3441,10 +3396,6 @@ pivot='tail', normalize=False, **kwargs)
         return stem_container
 
     stem3D = stem
-
-
-docstring.interpd.update(Axes3D_kwdoc=martist.kwdoc(Axes3D))
-docstring.dedent_interpd(Axes3D.__init__)
 
 
 def get_test_data(delta=0.05):

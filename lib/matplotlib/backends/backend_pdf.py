@@ -5,7 +5,6 @@ Author: Jouni K Seppänen <jks@iki.fi> and others.
 """
 
 import codecs
-import collections
 from datetime import datetime
 from enum import Enum
 from functools import total_ordering
@@ -25,7 +24,7 @@ import numpy as np
 from PIL import Image
 
 import matplotlib as mpl
-from matplotlib import _api, _text_layout, cbook
+from matplotlib import _api, _text_helpers, cbook
 from matplotlib._pylab_helpers import Gcf
 from matplotlib.backend_bases import (
     _Backend, _check_savefig_extra_args, FigureCanvasBase, FigureManagerBase,
@@ -682,15 +681,14 @@ class PdfFile:
         self._soft_mask_states = {}
         self._soft_mask_seq = (Name(f'SM{i}') for i in itertools.count(1))
         self._soft_mask_groups = []
-        # reproducible writeHatches needs an ordered dict:
-        self.hatchPatterns = collections.OrderedDict()
+        self.hatchPatterns = {}
         self._hatch_pattern_seq = (Name(f'H{i}') for i in itertools.count(1))
         self.gouraudTriangles = []
 
-        self._images = collections.OrderedDict()   # reproducible writeImages
+        self._images = {}
         self._image_seq = (Name(f'I{i}') for i in itertools.count(1))
 
-        self.markers = collections.OrderedDict()   # reproducible writeMarkers
+        self.markers = {}
         self.multi_byte_charprocs = {}
 
         self.paths = []
@@ -2238,6 +2236,20 @@ class RendererPdf(_backend_pdf_ps.RendererPDFPSBase):
             return s.encode('cp1252', 'replace')
         return s.encode('utf-16be', 'replace')
 
+    @staticmethod
+    def _font_supports_char(fonttype, char):
+        """
+        Returns True if the font is able to provided the char in a PDF
+
+        For a Type 3 font, this method returns True only for single-byte
+        chars.  For Type 42 fonts this method always returns True.
+        """
+        if fonttype == 3:
+            return ord(char) <= 255
+        if fonttype == 42:
+            return True
+        raise NotImplementedError()
+
     def draw_text(self, gc, x, y, s, prop, angle, ismath=False, mtext=None):
         # docstring inherited
 
@@ -2272,35 +2284,36 @@ class RendererPdf(_backend_pdf_ps.RendererPDFPSBase):
             }
             self.file._annotations[-1][1].append(link_annotation)
 
-        # If fonttype != 3 emit the whole string at once without manual
-        # kerning.
-        if fonttype != 3:
+        # If fonttype is neither 3 nor 42, emit the whole string at once
+        # without manual kerning.
+        if fonttype not in [3, 42]:
             self.file.output(Op.begin_text,
                              self.file.fontName(prop), fontsize, Op.selectfont)
             self._setup_textpos(x, y, angle)
             self.file.output(self.encode_string(s, fonttype),
                              Op.show, Op.end_text)
 
-        # There is no way to access multibyte characters of Type 3 fonts, as
-        # they cannot have a CIDMap.  Therefore, in this case we break the
-        # string into chunks, where each chunk contains either a string of
-        # consecutive 1-byte characters or a single multibyte character.
-        # A sequence of 1-byte characters is broken into multiple chunks to
-        # adjust the kerning between adjacent chunks.  Each chunk is emitted
-        # with a separate command: 1-byte characters use the regular text show
-        # command (TJ) with appropriate kerning between chunks, whereas
-        # multibyte characters use the XObject command (Do).  (If using Type
-        # 42 fonts, all of this complication is avoided, but of course,
-        # subsetting those fonts is complex/hard to implement.)
+        # A sequence of characters is broken into multiple chunks. The chunking
+        # serves two purposes:
+        #   - For Type 3 fonts, there is no way to access multibyte characters,
+        #     as they cannot have a CIDMap.  Therefore, in this case we break
+        #     the string into chunks, where each chunk contains either a string
+        #     of consecutive 1-byte characters or a single multibyte character.
+        #   - A sequence of 1-byte characters is split into chunks to allow for
+        #     kerning adjustments between consecutive chunks.
+        #
+        # Each chunk is emitted with a separate command: 1-byte characters use
+        # the regular text show command (TJ) with appropriate kerning between
+        # chunks, whereas multibyte characters use the XObject command (Do).
         else:
             # List of (start_x, [prev_kern, char, char, ...]), w/o zero kerns.
             singlebyte_chunks = []
             # List of (start_x, glyph_index).
             multibyte_glyphs = []
             prev_was_multibyte = True
-            for item in _text_layout.layout(
+            for item in _text_helpers.layout(
                     s, font, kern_mode=KERNING_UNFITTED):
-                if ord(item.char) <= 255:
+                if self._font_supports_char(fonttype, item.char):
                     if prev_was_multibyte:
                         singlebyte_chunks.append((item.x, []))
                     if item.prev_kern:
@@ -2642,11 +2655,8 @@ class PdfPages:
 
         Parameters
         ----------
-        figure : `.Figure` or int, optional
-            Specifies what figure is saved to file. If not specified, the
-            active figure is saved. If a `.Figure` instance is provided, this
-            figure is saved. If an int is specified, the figure instance to
-            save is looked up by number.
+        figure : `.Figure` or int, default: the active figure
+            The figure, or index of the figure, that is saved to the file.
         """
         if not isinstance(figure, Figure):
             if figure is None:
